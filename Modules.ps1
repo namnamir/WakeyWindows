@@ -286,7 +286,7 @@ function Open-Close-App {
     Start-Process $Application
 
     # Log the event with calculated wait time
-    Write-Message -LogMessage "The application '$Application' will be opened for '$(Time-Delta-Humanize (New-TimeSpan -Seconds $WaitTime))' and then closed at '$((Get-Date).AddSeconds($WaitFor))'." -Type "Info"
+    Write-Message -LogMessage "The application '$Application' will be opened for '$(Time-Delta-Humanize (New-TimeSpan -Seconds $WaitTime))' and then closed at '$((Get-Date).AddSeconds($WaitTime))'." -Type "Info"
 
     # Wait for the specified time
     Start-Sleep $WaitTime
@@ -331,7 +331,8 @@ function Open-Close-Edge-Tab {
 
   try {
     # Calculate the close time
-    $CloseTime = (Get-Date).AddSeconds($WaitFor)
+    $CloseTime = (Get-Date).AddSeconds($WaitTime)
+
     # Open the webpage
     Start-Process microsoft-edge:$Webpage
 
@@ -345,13 +346,14 @@ function Open-Close-Edge-Tab {
       Start-Sleep $(Get-Random -Minimum 2 -Maximum 10)
     }
 
+    # Simulate Ctrl+W to close the active tab
     Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.SendKeys]::SendWait("^{w}") # Send Ctrl+w to close active tab
 
     # Log the event
     Write-Message -LogMessage "The webpage '$Webpage' is being closed." -Type "Info"
   } catch {
-    Write-Message -LogMessage "Error opening or closing the webpage: $_" -Type "Critical"
+    Write-Message -LogMessage "Error opening or closing the webpage: '$Webpage'" -Type "Critical"
   }
 }
 
