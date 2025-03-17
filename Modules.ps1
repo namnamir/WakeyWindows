@@ -70,58 +70,51 @@ function Write-Message {
 }
 
 
-
 function Run-CMDlet {
-    <#
-        .SYNOPSIS
-        Runs a specified cmdlet and optionally logs events with verbosity control.
-    
-        .DESCRIPTION
-        Runs a specified cmdlet and optionally logs information about the execution, including errors. 
-        Provides options for controlling the verbosity of logging.
-    
-        .PARAMETER CMDlet
-        [String] The cmdlet to run.
-    
-        .PARAMETER Flag
-        [bool] A switch parameter to enable logging. Defaults to $true.
-    
-        .PARAMETER Verbosity
-        [ValidateSet("Info", "Error", "All")]] The verbosity level for logging (Info, Error, All). Defaults to "Info".
-    
-        .OUTPUTS
-        [psobject] The output of the executed cmdlet (if any).
-    #>
+  <#
+      .SYNOPSIS
+      Runs a specified cmdlet and optionally logs events with verbosity control.
+
+      .DESCRIPTION
+      Runs a specified cmdlet (as a script block or string) and optionally logs information about the execution, including errors.
+
+      .PARAMETER CMDlet
+      The cmdlet to run (as a script block or string).
+
+      .PARAMETER Flag
+      A switch parameter to enable logging. Defaults to $true.
+
+      .OUTPUTS
+      The output of the executed cmdlet (if any).
+  #>
 
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory,ValueFromPipeline)]
-    [string]$CMDlet,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$Flag
+      [Parameter(Mandatory, ValueFromPipeline)]
+      [ScriptBlock]$CMDlet,  # Accepts a script block
+      [Parameter(Mandatory = $false)]
+      [switch]$Flag
   )
 
   # Log execution information (if logging enabled)
   if ($Flag) {
-    Write-Message -LogMessage "Running cmdlet: '$CMDlet'" -Type "Info"
+      Write-Message -LogMessage "Running cmdlet: '$CMDlet'" -Type "Info"
   }
 
   try {
-    # Run the cmdlet and capture output
-    & $CMDlet
-  } catch {
-    # Handle specific exceptions (optional)
-    if ($_.GetType().Name -eq "CmdletInvocationException") {
-      Write-Message -LogMessage "Error running cmdlet '$CMDlet': $($_.ExceptionMessage)" -Type "Critical"
-    } else {
-      Write-Message -LogMessage "Error executing cmdlet '$CMDlet': $_" -Type "Critical"
-    }
-  }
+      # Run the cmdlet and capture output
+      $Output = & $CMDlet
 
-  # Control logging based on verbosity
-  if ($Flag) {
-    Write-Message -LogMessage "Cmdlet '$CMDlet' completed successfully." -Type "Info"
+      # Log success if logging is enabled
+      if ($Flag) {
+          Write-Message -LogMessage "Cmdlet '$CMDlet' completed successfully." -Type "Info"
+      }
+
+      # Return the output
+      return $Output
+  } catch {
+      # Log the error
+      Write-Message -LogMessage "Error executing cmdlet '$CMDlet': $($_.Exception.Message)" -Type "Critical"
   }
 }
 
