@@ -97,18 +97,18 @@ while (
     # If tomorrow is in weekend or a public holiday
     if (
       ($TimeStartTomorrow.DayOfWeek -in $NotWorkingDays) -or
-      (IsPublicHoliday $TimeStartTomorrow)
+      (Check-Holiday $TimeStartTomorrow)
     ) {
       $TimeWait02 = ($TimeStartTomorrow.AddDays(1) - (Get-Date)).TotalSeconds
 
       # Log message
-      $LogMessage02 = "The working hour is passed and tomorrow is a holiday; so the scirpt will be paused for"
+      $LogMessage02 = "The working hour is passed and tomorrow is a holiday; so the script will be paused for"
     }
     else {
       $TimeWait02 = ($TimeStartTomorrow - (Get-Date)).TotalSeconds
 
       # Log message
-      $LogMessage02 = "The working hour is passed; so the scirpt will be paused for"
+      $LogMessage02 = "The working hour is passed; so the script will be paused for"
     }
 
     # Change the screen brightness
