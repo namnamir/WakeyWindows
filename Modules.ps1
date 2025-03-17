@@ -1,4 +1,8 @@
-﻿function Write-Message {
+﻿# Load configurations
+. .\Config.ps1
+
+
+function Write-Message {
     <#
         .SYNOPSIS
         Log a message in PowerShell.
@@ -25,6 +29,7 @@
     [string]$LogMessage,
 
     [Parameter(Mandatory = $false,ValueFromPipeline)]
+    [ValidateSet("Info", "Warning", "Error", "Critical")]
     [string]$Type = "Info",
 
     [Parameter(Mandatory = $false)]
@@ -33,32 +38,38 @@
 
   # Check if logging is enabled
   if ($LogFlag) {
-    # Get the current date-time
-    $CurrentTime = Get-Date -Format "dd-MMM-yyyy HH:mm:ss"
+    # Format the message with a timestamp and type
+    $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    # Define icons based on the type
+    $TypeIcon = switch ($Type) {
+    "Info"     { "ℹ️" }
+    "Warning"  { "⚠️" }
+    "Error"    { "❗" }
+    "Critical" { "📛" }
+    Default    { "✅" }
+    }
+    $FormattedMessage = "[$Timestamp] $TypeIcon [$($Type.PadRight(8))] $LogMessage"
 
-    # Configure color codes (modify for different colors)
-    $Red = [char]27 + '[31m'
-    $Green = [char]27 + '[32m'
-    $Yellow = [char]27 + '[33m'
-    $Blue = [char]27 + '[34m'
-    $Cyan = [char]27 + '[36m'
-    $Reset = [char]27 + '[0m'
-
-    # Determine type-based prefix and color (considering NoColor flag)
-    $TypePrefix = ""
-    $TypeColor = $Reset
+    # Write the message to the console
     switch ($Type) {
-      "Info" { $TypePrefix = " ℹ️  "; $TypeColor = if ($NoColor) { $Reset } else { $Cyan } }
-      "Warning" { $TypePrefix = " ⚠️  "; $TypeColor = if ($NoColor) { $Reset } else { $Yellow } }
-      "Critical" { $TypePrefix = " ❗  "; $TypeColor = if ($NoColor) { $Reset } else { $Red } }
-      Default { $TypePrefix = " 👍  "; $TypeColor = if ($NoColor) { $Reset } else { $Green } }
+        "Info"     { Write-Host $FormattedMessage -ForegroundColor Green }
+        "Warning"  { Write-Host $FormattedMessage -ForegroundColor Yellow }
+        "Error"    { Write-Host $FormattedMessage -ForegroundColor Red }
+        "Critical" { Write-Host $FormattedMessage -ForegroundColor Magenta }
     }
 
-    # Write the log
-    Write-Host ("{0}{1}{2} - {3}{4}" -f $TypePrefix,$TypeColor,$CurrentTime,$Reset,$LogMessage) -NoNewline
-    Write-Host $Reset
+    # Write the message to the log file if logging is enabled
+    if ($Global:LogFileFlag -and $Global:LogFileLocation) {
+        try {
+            Add-Content -Path $Global:LogFileLocation -Value $FormattedMessage
+        } catch {
+            Write-Host "Failed to write to log file: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
   }
 }
+
+
 
 function Run-CMDlet {
     <#
@@ -116,49 +127,49 @@ function Run-CMDlet {
 
 
 function Time-Delta-Humanize {
-    <#
-        .SYNOPSIS
-        Make the time delta readable.
+  <#
+      .SYNOPSIS
+      Make the time delta readable.
 
-        .DESCRIPTION
-        Converts a TimeSpan into a human-readable format (e.g., "2 Weeks, 3 Days, 5 Hours").
+      .DESCRIPTION
+      Converts a TimeSpan into a human-readable format (e.g., "2 Weeks, 3 Days, 5 Hours").
 
-        .INPUTS
-        [TimeSpan]
+      .INPUTS
+      [TimeSpan]
 
-        .OUTPUTS
-        [String]
-    #>
+      .OUTPUTS
+      [String]
+  #>
 
   param(
-    [Parameter(Mandatory,ValueFromPipeline)]
-    [timespan]$TimeDelta
+      [Parameter(Mandatory, ValueFromPipeline)]
+      [timespan]$TimeDelta
   )
 
   # Calculate time units
-  $TimeUnits = @{}
-  $TimeUnits.Add("1-Month",  [math]::Truncate($TimeDelta.Days / 30))
-  $TimeUnits.Add("2-Week",   [math]::Truncate(($TimeDelta.Days - $TimeUnits["Months"] * 30) / 7))
-  $TimeUnits.Add("3-Day",    $TimeDelta.Days - $TimeUnits["Months"] * 30 - $TimeUnits["Weeks"] * 7)
-  $TimeUnits.Add("4-Hour",   $TimeDelta.Hours)
-  $TimeUnits.Add("5-Minute", $TimeDelta.Minutes)
-  $TimeUnits.Add("6-Second", $TimeDelta.Seconds)
-
-  $TimeUnits = $TimeUnits.GetEnumerator() | Sort-Object -property:Name
+  $TimeUnits = @{
+      "Months"  = [math]::Truncate($TimeDelta.Days / 30)
+      "Weeks"   = [math]::Truncate(($TimeDelta.Days % 30) / 7)
+      "Days"    = $TimeDelta.Days % 7
+      "Hours"   = $TimeDelta.Hours
+      "Minutes" = $TimeDelta.Minutes
+      "Seconds" = $TimeDelta.Seconds
+  }
 
   # Build output string
   $Output = ""
 
-  foreach ($Unit in $TimeUnits.Keys) {
-    $value = $TimeUnits[$Unit]
-    if ($Value -gt 0) {
-      $Plural = if ($Value -eq 1) { "" } else { "s" }
-      $Output += "$Value $($Unit.Substring(2))$Plural, "
-    }
+  foreach ($Unit in @("Months", "Weeks", "Days", "Hours", "Minutes", "Seconds")) {
+      $Value = $TimeUnits[$Unit]
+      if ($Value -gt 0) {
+          # Add "s" only if the unit is singular and the value is greater than 1
+          $UnitName = if ($Value -eq 1) { $Unit.TrimEnd('s') } else { $Unit }
+          $Output += "$Value $UnitName, "
+      }
   }
 
   # Remove trailing comma and space
-  $Output = $Output.TrimEnd(',',' ')
+  $Output = $Output.TrimEnd(',', ' ')
 
   # Return formatted string
   return $Output
