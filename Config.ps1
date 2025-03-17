@@ -30,6 +30,7 @@ $Global:LanguageCode = (Get-Culture).Name.Substring(0,2).ToUpper() # Get it from
 # $LanguageCode = "EN"
 
 # Keep-alive method
+# Possible options: "Press-Key", "Open-Close-App", "Open-Close-Edge-Tab", "Run-CMDlet", "Mouse-Jiggling", "Change-Teams-Status", "Random"
 $Global:KeepAliveMethod = "Random"
 
 # Random application and webpage
