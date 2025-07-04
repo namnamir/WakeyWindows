@@ -31,7 +31,7 @@ $Global:LanguageCode = (Get-Culture).Name.Substring(0,2).ToUpper() # Get it from
 
 # Keep-alive method
 # Possible options: "Press-Key", "Open-Close-App", "Open-Close-Edge-Tab", "Run-CMDlet", "Mouse-Jiggling", "Change-Teams-Status", "Random"
-$Global:KeepAliveMethod = "Random"
+$Global:KeepAliveMethod = "Press-Key"
 
 # Random application and webpage
 $Global:Application = @("Notepad","Calc","MSPaint","MSInfo32") | Get-Random
@@ -80,7 +80,7 @@ $Global:IPAddress = @(
 ) | Get-Random
 
 # Random key and cmdlet
-$Global:Key = @("{F15}","{F16}","{SCROLLLOCK}","{CAPSLOCK}","{END}","{HOME}","{LEFT}","{RIGHT}","{UP}","{DOWN}","{PGUP}","{PGDN}") | Get-Random
+$Global:Key = @("{NUMLOCK}", "{F15}", "{F16}", "{SCROLLLOCK}", "{CAPSLOCK}", "{END}", "{HOME}", "{LEFT}", "{RIGHT}", "{UP}", "{DOWN}", "{PGUP}", "{PGDN}") | Get-Random
 $Global:CMDlet = @(
     # System Information
     { Get-Process | Select-Object -First 1 },
