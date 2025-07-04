@@ -20,7 +20,7 @@ $Global:TimeWaitMax = 300 # In seconds
 # Logging flag
 $Global:LogFlag = $true
 $Global:TranscriptFlag = $true
-$Global:TranscriptFileLocation = ".\Logs\Transcript_$((Get-Date).ToString('yyyyMMdd_HHmmss')).log"
+$Global:TranscriptFileLocation = ".\Logs\Transcript_$((Get-Date).ToString('yyyyMMdd')).log"
 $Global:LogFileLocation = ".\Logs\Activity_$((Get-Date).ToString('yyyyMMdd')).log"
 # $LogFileLocation = $env:USERPROFILE + "\Documents\Activity_$((Get-Date).ToString('yyyyMMdd_HHmmss')).log"
 
