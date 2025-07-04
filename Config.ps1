@@ -19,10 +19,10 @@ $Global:TimeWaitMax = 300 # In seconds
 
 # Logging flag
 $Global:LogFlag = $true
-$Global:LogFileFlag = $true
-# $LogFileLocation = $env:USERPROFILE + "\Documents\Activity_$((Get-Date).ToString('yyyyMMdd_HHmmss')).log"
+$Global:TranscriptFlag = $true
 $Global:TranscriptFileLocation = ".\Logs\Transcript_$((Get-Date).ToString('yyyyMMdd_HHmmss')).log"
-$Global:LogFileLocation = ".\Logs\Activity_$((Get-Date).ToString('yyyyMMdd_HHmmss')).log"
+$Global:LogFileLocation = ".\Logs\Activity_$((Get-Date).ToString('yyyyMMdd')).log"
+# $LogFileLocation = $env:USERPROFILE + "\Documents\Activity_$((Get-Date).ToString('yyyyMMdd_HHmmss')).log"
 
 # Public holidays parameters; set it manually or get it from the system language
 $Global:CountryCode = "NL" # The ISO format of the country you need to check holidays for

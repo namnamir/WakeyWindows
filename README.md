@@ -36,7 +36,7 @@ The configuration file (`Config.ps1`) allows you to customize WakeyWindows to su
   - `Random` (randomly selects a method).
 
 #### **Logging**
-- `LogFileFlag`: Enable or disable logging (`$true` or `$false`).
+- `TranscriptFlag`: Enable or disable logging (`$true` or `$false`).
 - `LogFileLocation`: Specify the path for the activity log file.
 - `TranscriptFileLocation`: Specify the path for the PowerShell transcript file.
 
@@ -49,7 +49,7 @@ $Global:TimeBreak01 = [datetime]"10:00:00"
 $Global:DurationBreak01 = Get-Random -Minimum 12 -Maximum 17
 
 $Global:KeepAliveMethod = "Random"
-$Global:LogFileFlag = $true
+$Global:TranscriptFlag = $true
 $Global:LogFileLocation = ".\Logs\Activity.log"
 $Global:TranscriptFileLocation = ".\Logs\Transcript.log"
 

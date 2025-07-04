@@ -6,7 +6,7 @@
 $CurrentTime = Get-Date
 
 # Handle the log file
-if ($LogFileFlag) {
+if ($TranscriptFlag) {
   # Stop transcription if it is running
   try {
     Stop-Transcript
@@ -21,7 +21,7 @@ if ($LogFileFlag) {
   # Start transcription with error handling
   try {
     # Start logging everything in the file
-    Start-Transcript -Path $Global:TranscriptFileLocation
+    Start-Transcript -Path $Global:TranscriptFlag
     Write-Message "Transcription started: $Global:TranscriptFileLocation"
   } catch {
     Write-Message "Failed to start transcription: $($_.Exception.Message)" -Type "Error"
@@ -123,7 +123,7 @@ while (
 }
 
 # Stop logging everything in the file
-if ($LogFileFlag) {
+if ($TranscriptFlag) {
   try {
     Stop-Transcript
     Write-Message "Transcription stopped."
