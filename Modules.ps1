@@ -61,6 +61,10 @@ function Write-Message {
     # Write the message to the log file if logging is enabled
     if ($Global:LogFileFlag -and $Global:LogFileLocation) {
         try {
+            $logDir = Split-Path $Global:LogFileLocation
+            if (-not (Test-Path $logDir)) {
+                New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+            }
             Add-Content -Path $Global:LogFileLocation -Value $FormattedMessage
         } catch {
             Write-Host "Failed to write to log file: $($_.Exception.Message)" -ForegroundColor Red
