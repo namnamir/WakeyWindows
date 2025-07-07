@@ -59,7 +59,7 @@ function Write-Message {
     }
 
     # Write the message to the log file if logging is enabled
-    if ($Global:LogFileFlag -and $Global:LogFileLocation) {
+    if ($Global:LogFileLocation) {
         try {
             $logDir = Split-Path $Global:LogFileLocation
             if (-not (Test-Path $logDir)) {
@@ -244,7 +244,7 @@ function Mouse-Jiggling {
     Write-Message -LogMessage "Moving mouse cursor from [$($Position.X), $($Position.Y)] to a random position within screen boundaries: [$RandomX, $RandomY]" -Type "Info"
 
     # Set the new position of the mouse cursor
-    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point ($RandomX,$RandomY)
+    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point ($RandomX, $RandomY)
   } catch {
     Write-Message -LogMessage "Error moving the mouse cursor: $_" -Type "Critical"
   }
