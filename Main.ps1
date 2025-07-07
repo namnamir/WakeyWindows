@@ -21,7 +21,7 @@ if ($TranscriptFlag) {
   # Start transcription with error handling
   try {
     # Start logging everything in the file
-    Start-Transcript -Path $Global:TranscriptFlag
+    Start-Transcript -Path $Global:TranscriptFileLocation
     Write-Message "Transcription started: $Global:TranscriptFileLocation"
   } catch {
     Write-Message "Failed to start transcription: $($_.Exception.Message)" -Type "Error"
