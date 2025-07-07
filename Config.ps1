@@ -22,7 +22,7 @@ $Global:LogFlag = $true
 $Global:TranscriptFlag = $true
 $Global:TranscriptFileLocation = ".\Logs\Transcript_$((Get-Date).ToString('yyyyMMdd')).log"
 $Global:LogFileLocation = ".\Logs\Activity_$((Get-Date).ToString('yyyyMMdd')).log"
-# $LogFileLocation = $env:USERPROFILE + "\Documents\Activity_$((Get-Date).ToString('yyyyMMdd_HHmmss')).log"
+# $Global:LogFileLocation = $env:USERPROFILE + "\Documents\Activity_$((Get-Date).ToString('yyyyMMdd_HHmmss')).log"
 
 # Public holidays parameters; set it manually or get it from the system language
 $Global:CountryCode = "NL" # The ISO format of the country you need to check holidays for
@@ -34,7 +34,7 @@ $Global:LanguageCode = (Get-Culture).Name.Substring(0,2).ToUpper() # Get it from
 $Global:KeepAliveMethod = "Press-Key"
 
 # Random application and webpage
-$Global:Application = @("Notepad","Calc","MSPaint","MSInfo32") | Get-Random
+$Global:Application = @("Notepad", "Calc", "MSPaint", "MSInfo32") | Get-Random
 
 # Work-related webpages
 $Global:Webpage = @(
@@ -57,16 +57,16 @@ $Global:Webpage = @(
 
 # Work-related IP addresses (e.g., internal or external services)
 $Global:IPAddress = @(
-    "8.8.8.8",       # Google Public DNS
-    "8.8.4.4",       # Google Public DNS Secondary
-    "1.1.1.1",       # Cloudflare DNS
-    "1.0.0.1",       # Cloudflare DNS Secondary
-    "20.190.128.0",  # Azure Public IP (example)
-    "40.90.4.0",     # Azure Public IP (example)
-    "52.239.148.0",  # Azure Public IP (example)
-    "13.107.42.14",  # Microsoft Teams
-    "13.107.6.158",  # Microsoft Office
-    "40.97.132.2",   # Microsoft Exchange Online
+    "8.8.8.8",        # Google Public DNS
+    "8.8.4.4",        # Google Public DNS Secondary
+    "1.1.1.1",        # Cloudflare DNS
+    "1.0.0.1",        # Cloudflare DNS Secondary
+    "20.190.128.0",   # Azure Public IP (example)
+    "40.90.4.0",      # Azure Public IP (example)
+    "52.239.148.0",   # Azure Public IP (example)
+    "13.107.42.14",   # Microsoft Teams
+    "13.107.6.158",   # Microsoft Office
+    "40.97.132.2",    # Microsoft Exchange Online
     "142.250.190.78", # Google Workspace (example)
     "172.217.0.0",    # Google Public IP (example)
     "216.58.192.0",   # Google Public IP (example)
