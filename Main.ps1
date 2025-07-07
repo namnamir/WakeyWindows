@@ -84,8 +84,8 @@ while (
     Start-Sleep $TimeWait01
   } catch {
     # Handle errors during keep-alive methods or checks
-    Write-Message "Error keeping system awake: $($_.Exception.Message)"
-    Write-Message "Error occurred. Pausing script for 60 seconds."
+    Write-Message "Error keeping system awake: $($_.Exception.Message)" -Type "Critical"
+    Write-Message "Error occurred. Pausing script for 60 seconds." -Type "Critical"
     Start-Sleep -Seconds 60
   }
 
