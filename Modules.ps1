@@ -74,55 +74,6 @@ function Write-Message {
 }
 
 
-function Run-CMDlet {
-  <#
-      .SYNOPSIS
-      Runs a specified cmdlet and optionally logs events with verbosity control.
-
-      .DESCRIPTION
-      Runs a specified cmdlet (as a script block or string) and optionally logs information about the execution, including errors.
-
-      .PARAMETER CMDlet
-      The cmdlet to run (as a script block or string).
-
-      .PARAMETER Flag
-      A switch parameter to enable logging. Defaults to $true.
-
-      .OUTPUTS
-      The output of the executed cmdlet (if any).
-  #>
-
-  [CmdletBinding()]
-  param(
-      [Parameter(Mandatory, ValueFromPipeline)]
-      [ScriptBlock]$CMDlet,  # Accepts a script block
-      [Parameter(Mandatory = $false)]
-      [switch]$Flag
-  )
-
-  # Log execution information (if logging enabled)
-  if ($Flag) {
-      Write-Message -LogMessage "Running cmdlet: '$CMDlet'" -Type "Info"
-  }
-
-  try {
-      # Run the cmdlet and capture output
-      $Output = & $CMDlet
-
-      # Log success if logging is enabled
-      if ($Flag) {
-          Write-Message -LogMessage "Cmdlet '$CMDlet' completed successfully." -Type "Info"
-      }
-
-      # Return the output
-      return $Output
-  } catch {
-      # Log the error
-      Write-Message -LogMessage "Error executing cmdlet '$CMDlet': $($_.Exception.Message)" -Type "Critical"
-  }
-}
-
-
 function Time-Delta-Humanize {
   <#
       .SYNOPSIS
@@ -170,6 +121,55 @@ function Time-Delta-Humanize {
 
   # Return formatted string
   return $Output
+}
+
+
+function Run-CMDlet {
+  <#
+      .SYNOPSIS
+      Runs a specified cmdlet and optionally logs events with verbosity control.
+
+      .DESCRIPTION
+      Runs a specified cmdlet (as a script block or string) and optionally logs information about the execution, including errors.
+
+      .PARAMETER CMDlet
+      The cmdlet to run (as a script block or string).
+
+      .PARAMETER Flag
+      A switch parameter to enable logging. Defaults to $true.
+
+      .OUTPUTS
+      The output of the executed cmdlet (if any).
+  #>
+
+  [CmdletBinding()]
+  param(
+      [Parameter(Mandatory, ValueFromPipeline)]
+      [ScriptBlock]$CMDlet,  # Accepts a script block
+      [Parameter(Mandatory = $false)]
+      [switch]$Flag
+  )
+
+  # Log execution information (if logging enabled)
+  if ($Flag) {
+      Write-Message -LogMessage "Running cmdlet: '$CMDlet'" -Type "Info"
+  }
+
+  try {
+      # Run the cmdlet and capture output
+      $Output = & $CMDlet
+
+      # Log success if logging is enabled
+      if ($Flag) {
+          Write-Message -LogMessage "Cmdlet '$CMDlet' completed successfully." -Type "Info"
+      }
+
+      # Return the output
+      return $Output
+  } catch {
+      # Log the error
+      Write-Message -LogMessage "Error executing cmdlet '$CMDlet': $($_.Exception.Message)" -Type "Critical"
+  }
 }
 
 
