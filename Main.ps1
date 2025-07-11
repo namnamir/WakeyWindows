@@ -129,7 +129,7 @@ while (
     # If tomorrow is in weekend or a public holiday
     if (
       ($TimeStartTomorrow.DayOfWeek -in $NotWorkingDays) -or
-      (Check-Holiday $TimeStartTomorrow)
+      (Check-Holiday -Date $TimeStartTomorrow)
     ) {
       $TimeWait02 = ($TimeStartTomorrow.AddDays(1) - (Get-Date)).TotalSeconds
 
