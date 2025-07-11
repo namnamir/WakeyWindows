@@ -1,3 +1,8 @@
+param(
+    [string]$Method,      # e.g. "Press-Key"
+    [string]$Arg          # e.g. "{NUMLOCK}"
+)
+
 # Load modules and configurations
 . .\Modules.ps1
 . .\Config.ps1
@@ -47,6 +52,33 @@ while (
   try {
     # Load modules and configurations
     . .\Config.ps1
+
+    # Override config if arguments are provided
+    if ($Method) {
+      $KeepAliveMethod = $Method
+      # Log the event
+      Write-Message -LogMessage "The method '$KeepAliveMethod' is defined by the user." -Type "Info"
+      $Method = $null  # Nullify the Method variable to prevent repeated messages
+    }
+    if ($Arg) {
+        switch ($KeepAliveMethod) {
+            "Press-Key" {
+                # Ensure the key is wrapped in double quotes and curly braces if missing
+                if ($Arg -notmatch '^\{.*\}$') {
+                  $Key = "{$Arg}"
+                  Write-Message -LogMessage "Key argument was not in correct format. Converted to $Key." -Type "Warning"
+                } else {
+                    $Key = $Arg
+                }
+            }
+            "Open-Close-App" { $Application = $Arg }
+            "Open-Close-Edge-Tab" { $Webpage = $Arg }
+            "Run-CMDlet" { $CMDlet = [ScriptBlock]::Create($Arg) }
+        }
+        # Log the event
+        Write-Message -LogMessage "The argument of '$Arg' for '$KeepAliveMethod' is defined by the user." -Type "Info"
+        $Arg = $null  # Nullify the Arg variable to prevent repeated messages
+    }
 
     # Run the method of keeping Windows awake
     switch -Exact ($KeepAliveMethod) {
