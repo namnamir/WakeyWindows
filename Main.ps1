@@ -50,8 +50,13 @@ while (
   )
 ) {
   try {
-    # Load modules and configurations
+    # Load configurations for the current iteration as they might change
     . .\Config.ps1
+
+    # Check if the user is active, pause until the user is inactive
+    while (User-Is-Active) {
+      Start-Sleep -Seconds ($Global:TimeWaitMin - 5)
+    }
 
     # Override config if arguments are provided
     if ($Method) {

@@ -124,6 +124,57 @@ function Time-Delta-Humanize {
 }
 
 
+function User-Is-Active {
+  <#
+    .SYNOPSIS
+    Checks if the user is currently active based on mouse movement.
+
+    .DESCRIPTION
+    Determines user activity by comparing the current mouse cursor position to the last recorded position.
+    If the mouse has moved, the user is considered active.
+
+    .OUTPUTS
+    [bool] $true if user is active (mouse moved), otherwise $false.
+
+    .NOTES
+    Uses a script-scoped variable to persist the last mouse position between calls.
+  #>
+
+  [CmdletBinding()]
+  param()
+
+  try {
+    # Load the necessary assembly
+    Add-Type -AssemblyName System.Windows.Forms
+
+    # Initialize the last mouse position if not already set
+    if (-not $script:LastMousePosition) {
+      $script:LastMousePosition = [System.Windows.Forms.Cursor]::Position
+      Write-Message -LogMessage "Tracking user activity started." -Type "Info"
+      return $true
+    }
+
+    # Get the current mouse position
+    $current = [System.Windows.Forms.Cursor]::Position
+
+    # Compare current and last mouse positions
+    if ($current.X -ne $script:LastMousePosition.X -or $current.Y -ne $script:LastMousePosition.Y) {
+      $script:LastMousePosition = $current
+      # Log the event with calculated wait time
+      Write-Message -LogMessage "User activity detected. Pausing the script for '$(Time-Delta-Humanize (New-TimeSpan -Seconds $TimeWaitMax))'." -Type "Info"
+      return $true
+    }
+
+    # No movement detected
+    return $false
+
+  } catch {
+    Write-Message -LogMessage "Error checking user activity: $($_.Exception.Message)" -Type "Critical"
+    return $false
+  }
+}
+
+
 function Check-Holiday {
     <#
         .SYNOPSIS
