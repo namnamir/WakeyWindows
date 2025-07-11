@@ -74,6 +74,85 @@ function Write-Message {
 }
 
 
+function Get-SleepTimeout {
+  <#
+    .SYNOPSIS
+    Retrieves the system sleep timeout for AC or DC power mode.
+
+    .DESCRIPTION
+    Uses the powercfg utility to query the current sleep timeout for either AC (plugged in) or DC (battery) mode.
+
+    .PARAMETER Type
+    Specifies the power mode: "AC" for plugged in, "DC" for battery.
+
+    .OUTPUTS
+    [int] The sleep timeout in seconds, or $null if not found.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true, Position = 0)]
+    [ValidateSet("AC", "DC")]
+    [string]$Type
+  )
+  $pattern = if ($Type -eq "AC") { 'Current AC Power Setting Index' } else { 'Current DC Power Setting Index' }
+  $line = (powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE) | Where-Object { $_ -match $pattern }
+  if ($line -match '0x([0-9a-fA-F]+)') {
+    return [Convert]::ToInt32($matches[1], 16)
+  }
+  return $null
+}
+
+
+function Set-TimeWaitMax-FromPowerStatus {
+  <#
+    .SYNOPSIS
+    Sets the global TimeWaitMax variable based on current power status, but only if there is a change.
+
+    .DESCRIPTION
+    Determines if the system is running on AC or battery power and sets the $Global:TimeWaitMax variable to the system's sleep timeout accordingly.
+    Only updates if the power type or timeout value has changed since the last check.
+
+    .OUTPUTS
+    None. Sets $Global:TimeWaitMax.
+  #>
+  [CmdletBinding()]
+  param()
+
+  # Static variables to remember last state
+  if (-not $script:LastPowerType) { $script:LastPowerType = $null }
+  if (-not $script:LastTimeout)   { $script:LastTimeout   = $null }
+
+  $battery = Get-WmiObject -Class Win32_Battery -ErrorAction SilentlyContinue
+
+  if ($null -eq $battery) {
+    # No battery detected: assume AC
+    $type = "AC"
+    $timeout = Get-SleepTimeout -Type $type
+    $source = "No battery detected; desktop or plugged-in device"
+  } else {
+    switch ($battery.BatteryStatus) {
+      2 { $type = "AC"; $timeout = Get-SleepTimeout -Type $type; $source = "BatteryStatus=2 | Charging/AC" }
+      1 { $type = "DC"; $timeout = Get-SleepTimeout -Type $type; $source = "BatteryStatus=1 | Discharging/DC" }
+      default { $type = "AC"; $timeout = Get-SleepTimeout -Type $type; $source = "BatteryStatus=$($battery.BatteryStatus) | Fallback to AC" }
+    }
+  }
+
+  # Only update if type or timeout has changed
+  if ($type -ne $script:LastPowerType -or $timeout -ne $script:LastTimeout) {
+    if ($timeout -and $timeout -gt 0) {
+      $Global:TimeWaitMax = $timeout - 5
+      Write-Message -LogMessage "TimeWaitMax set to $Global:TimeWaitMax seconds ($source)." -Type "Info"
+      $script:LastPowerType = $type
+      $script:LastTimeout   = $timeout
+    } else {
+      Write-Message -LogMessage "Failed to determine sleep timeout for $type power ($source)." -Type "Warning"
+    }
+  } else {
+    Write-Message -LogMessage "No change in power type ($type) or timeout ($timeout); skipping update." -Type "Info"
+  }
+}
+
+
 function Time-Delta-Humanize {
   <#
       .SYNOPSIS

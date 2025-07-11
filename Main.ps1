@@ -50,12 +50,15 @@ while (
   )
 ) {
   try {
+    # Set the maximum wait time based on power status
+    Set-TimeWaitMax-FromPowerStatus
+
     # Load configurations for the current iteration as they might change
     . .\Config.ps1
 
     # Check if the user is active, pause until the user is inactive
     while (User-Is-Active) {
-      Start-Sleep -Seconds ($Global:TimeWaitMin - 5)
+      Start-Sleep -Seconds $Global:TimeWaitMax
     }
 
     # Override config if arguments are provided
