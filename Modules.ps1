@@ -124,6 +124,64 @@ function Time-Delta-Humanize {
 }
 
 
+function Check-Holiday {
+    <#
+        .SYNOPSIS
+        Checks if the given date is a public holiday in the specified country.
+    
+        .DESCRIPTION
+        Retrieves holiday information using the Open Holidays API and determines if the specified date is a public holiday in the provided country and language.
+    
+        .PARAMETER Date
+        The date to check for public holidays.
+    
+        .PARAMETER CountryCode
+        The ISO code of the country to check for holidays (e.g., "US", "GB").
+    
+        .PARAMETER LanguageCode
+        The ISO code of the language to use for holiday names (optional, defaults to the country code).
+    
+        .OUTPUTS
+        $true if it's a public holiday, otherwise $false.
+    
+        .LINK
+        https://www.openholidaysapi.org/en
+    #>
+
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true,ValueFromPipeline)]
+    [datetime]$Date,
+
+    [Parameter(Mandatory = $true, Position = 1)]
+    [string]$CountryCode,
+
+    [Parameter(Mandatory = $false, Position = 2)]
+    [string]$LanguageCode = $CountryCode
+  )
+
+  try {
+    # Convert date to the acceptable format for the API
+    $Date_Converted = Get-Date ($Date).ToUniversalTime() -UFormat '+%Y-%m-%d'
+
+    # Form the API URL
+    $URL = "https://openholidaysapi.org/PublicHolidays?countryIsoCode=$CountryCode&languageIsoCode=$LanguageCode&validFrom=$Date_Converted&validTo=$Date_Converted"
+    # Get the JSON data and convert it
+    $JSON = (New-Object System.Net.WebClient).DownloadString($URL) | ConvertFrom-Json
+
+    # Check if response contains the "nationwide" property
+    if ($JSON -and $JSON.holidays -and ($JSON.holidays | Where-Object { $_.date = = $Date_Converted }).nationwide) {
+      return $true
+    } else {
+      return $false
+    }
+  } catch {
+    Write-Message -LogMessage "Error checking public holiday: $($_.Exception.Message)" -Type "Critical"
+    return $false
+  }
+}
+
+
 function Run-CMDlet {
   <#
       .SYNOPSIS
@@ -394,64 +452,6 @@ function Change-Screen-Brightness {
     }
   } catch {
     Write-Message -LogMessage "Error adjusting screen brightness: $($_.Exception.Message)" -Type "Critical"
-  }
-}
-
-
-function Check-Holiday {
-    <#
-        .SYNOPSIS
-        Checks if the given date is a public holiday in the specified country.
-    
-        .DESCRIPTION
-        Retrieves holiday information using the Open Holidays API and determines if the specified date is a public holiday in the provided country and language.
-    
-        .PARAMETER Date
-        The date to check for public holidays.
-    
-        .PARAMETER CountryCode
-        The ISO code of the country to check for holidays (e.g., "US", "GB").
-    
-        .PARAMETER LanguageCode
-        The ISO code of the language to use for holiday names (optional, defaults to the country code).
-    
-        .OUTPUTS
-        $true if it's a public holiday, otherwise $false.
-    
-        .LINK
-        https://www.openholidaysapi.org/en
-    #>
-
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory = $true,ValueFromPipeline)]
-    [datetime]$Date,
-
-    [Parameter(Mandatory = $true, Position = 1)]
-    [string]$CountryCode,
-
-    [Parameter(Mandatory = $false, Position = 2)]
-    [string]$LanguageCode = $CountryCode
-  )
-
-  try {
-    # Convert date to the acceptable format for the API
-    $Date_Converted = Get-Date ($Date).ToUniversalTime() -UFormat '+%Y-%m-%d'
-
-    # Form the API URL
-    $URL = "https://openholidaysapi.org/PublicHolidays?countryIsoCode=$CountryCode&languageIsoCode=$LanguageCode&validFrom=$Date_Converted&validTo=$Date_Converted"
-    # Get the JSON data and convert it
-    $JSON = (New-Object System.Net.WebClient).DownloadString($URL) | ConvertFrom-Json
-
-    # Check if response contains the "nationwide" property
-    if ($JSON -and $JSON.holidays -and ($JSON.holidays | Where-Object { $_.date = = $Date_Converted }).nationwide) {
-      return $true
-    } else {
-      return $false
-    }
-  } catch {
-    Write-Message -LogMessage "Error checking public holiday: $($_.Exception.Message)" -Type "Critical"
-    return $false
   }
 }
 
