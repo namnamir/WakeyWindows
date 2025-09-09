@@ -15,7 +15,7 @@ $Global:DurationBreak03 = Get-Random -Minimum 11 -Maximum 18
 
 # Time intervals between actions
 $Global:TimeWaitMin = 60  # In seconds
-$Global:TimeWaitMax = 300 # In seconds
+$Global:TimeWaitMax = 100 # In seconds
 
 # Logging flag
 $Global:LogFlag = $true
@@ -124,4 +124,6 @@ $Global:CMDlet = @(
 $Global:BrightnessFlag = $true
 $Global:BrightnessMin = 0
 $Global:BrightnessMax = 100
-$Global:BrightnessInitial = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness
+if ($null -eq $Global:BrightnessInitial) { 
+    $Global:BrightnessInitial = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness 
+}
