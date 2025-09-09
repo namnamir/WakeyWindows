@@ -11,7 +11,7 @@ param(
 $CurrentTime = Get-Date
 
 # Handle the log file
-if ($TranscriptFlag) {
+if ($Global:TranscriptStarted) {
   # Stop transcription if it is running
   try {
     Stop-Transcript
@@ -31,6 +31,10 @@ if ($TranscriptFlag) {
   } catch {
     Write-Message "Failed to start transcription: $($_.Exception.Message)" -Type "Error"
   }
+} else {
+    Start-Transcript -Path $Global:TranscriptFileLocation -Append
+    $Global:TranscriptStarted = $true
+    Write-Message -LogMessage "Transcription started: $Global:TranscriptFileLocation" -Type "Info"
 }
 
 while (
@@ -122,6 +126,7 @@ while (
     Write-Message "The script will be paused for $(Time-Delta-Humanize $(New-TimeSpan -Seconds $TimeWait01)); resume at $((Get-Date).AddSeconds($TimeWait01))."
     # Wait
     Start-Sleep $TimeWait01
+    
   } catch {
     # Handle errors during keep-alive methods or checks
     Write-Message "Error keeping system awake: $($_.Exception.Message)" -Type "Critical"
@@ -137,7 +142,7 @@ while (
     # If tomorrow is in weekend or a public holiday
     if (
       ($TimeStartTomorrow.DayOfWeek -in $NotWorkingDays) -or
-      (Check-Holiday -Date $TimeStartTomorrow)
+      (Check-Holiday -Date $TimeStartTomorrow -CountryCode $Global:CountryCode -LanguageCode $Global:LanguageCode)
     ) {
       $TimeWait02 = ($TimeStartTomorrow.AddDays(1) - (Get-Date)).TotalSeconds
 
@@ -151,9 +156,6 @@ while (
       $LogMessage02 = "The working hour is passed; so the script will be paused for"
     }
 
-    # Change the screen brightness
-    Change-Screen-Brightness
-
     # Log the event
     Write-Message "$LogMessage02 $(Time-Delta-Humanize (New-TimeSpan -Seconds $TimeWait02)); resume at $((Get-Date).AddSeconds($TimeWait02))."
 
@@ -163,10 +165,11 @@ while (
 }
 
 # Stop logging everything in the file
-if ($TranscriptFlag) {
+if ($Global:TranscriptStarted) {
   try {
     Stop-Transcript
-    Write-Message "Transcription stopped."
+    $Global:TranscriptStarted = $false
+    Write-Message -LogMessage "Transcription stopped." -Type "Info"
   } catch {
     if ($_.Exception.Message -like "*The host is not currently transcribing*") {
       Write-Message "No active transcription to stop." -Type "Warning"
