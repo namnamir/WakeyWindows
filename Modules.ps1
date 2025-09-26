@@ -204,53 +204,117 @@ function Time-Delta-Humanize {
 
 
 function User-Is-Active {
-  <#
-    .SYNOPSIS
-    Checks if the user is currently active based on mouse movement.
+    <#
+        .SYNOPSIS
+        Checks if the user is currently active based on mouse movement, mouse clicks, or keyboard input.
 
-    .DESCRIPTION
-    Determines user activity by comparing the current mouse cursor position to the last recorded position.
-    If the mouse has moved, the user is considered active.
+        .DESCRIPTION
+        Determines user activity by comparing the current mouse cursor position to the last recorded position,
+        or by detecting if any mouse button or key has been pressed since the last check. Also manages screen brightness based on activity.
 
-    .OUTPUTS
-    [bool] $true if user is active (mouse moved), otherwise $false.
+        .OUTPUTS
+        [bool] $true if user is active (mouse moved, mouse clicked, or key pressed), otherwise $false.
 
-    .NOTES
-    Uses a script-scoped variable to persist the last mouse position between calls.
-  #>
+        .NOTES
+        Uses a script-scoped variable to persist the last mouse position and keyboard state between calls.
+    #>
 
-  [CmdletBinding()]
-  param()
+    [CmdletBinding()]
+    param()
 
-  try {
-    # Load the necessary assembly
-    Add-Type -AssemblyName System.Windows.Forms
+    try {
+      # Ensure the required assembly is loaded
+      Add-Type -AssemblyName System.Windows.Forms
 
-    # Initialize the last mouse position if not already set
-    if (-not $script:LastMousePosition) {
-      $script:LastMousePosition = [System.Windows.Forms.Cursor]::Position
-      Write-Message -LogMessage "Tracking user activity started." -Type "Info"
-      return $true
+      # Add the GetAsyncKeyState API if not already present
+      if (-not ("Win32.User32" -as [type])) {
+        Add-Type -MemberDefinition @"
+        [DllImport("user32.dll")]
+        public static extern short GetAsyncKeyState(int vKey);
+"@ -Name "User32" -Namespace Win32
+      }
+
+      # Initialize the last mouse position if not already set
+      if (-not $script:LastMousePosition) {
+        $script:LastMousePosition = [System.Windows.Forms.Cursor]::Position
+        Write-Message -LogMessage "Tracking user activity started." -Type "Info"
+        return $true
+      }
+
+      # Get the current mouse position
+      $CurrentMousePosition = [System.Windows.Forms.Cursor]::Position
+
+      # Detect keyboard activity (any key pressed)
+      $keyPressed = $false
+      foreach ($vk in 1..254) {
+        if ([Win32.User32]::GetAsyncKeyState($vk) -band 0x8000) {
+          $keyPressed = $true
+          break
+        }
+      }
+
+      # Detect mouse click (left=0x01, right=0x02, middle=0x04)
+      $mouseClicked = $false
+      foreach ($button in @(0x01, 0x02, 0x04)) {
+        if ([Win32.User32]::GetAsyncKeyState($button) -band 0x8000) {
+          $mouseClicked = $true
+          break
+        }
+      }
+
+      Write-Message -LogMessage "Polling: Mouse: $CurrentMousePosition, Last: $script:LastMousePosition, KeyPressed: $keyPressed, MouseClicked: $mouseClicked" -Type "Info"
+      if (-not $script:LastActivityTime) {
+          $script:LastActivityTime = Get-Date
+      }
+
+      # Detect user activity by comparing positions, key press, or mouse click
+      if (
+        ($CurrentMousePosition.X -ne $script:LastMousePosition.X) -or
+        ($CurrentMousePosition.Y -ne $script:LastMousePosition.Y) -or
+        $keyPressed -or
+        $mouseClicked
+      ) {
+        $script:LastMousePosition = $CurrentMousePosition
+        $script:LastActivityTime = Get-Date
+        Write-Message -LogMessage "User activity detected (mouse move, click, or keyboard). Pausing the script for '$(Time-Delta-Humanize (New-TimeSpan -Seconds $TimeWaitMax))'." -Type "Info"
+        
+        if ($Global:BrightnessFlag -and $null -ne $Global:BrightnessInitial) {
+          Set-ScreenBrightness -Level $Global:BrightnessInitial
+          Write-Host "------------- $Global:BrightnessInitial"
+        }
+        return $true
+      # No movement, click, or key detected; dim the screen if needed
+      } else{
+        $inactiveSeconds = (Get-Date) - $script:LastActivityTime
+
+        # Only dim if user is inactive
+        if (
+          $Global:BrightnessFlag -and 
+          $null -ne $Global:BrightnessMin -and 
+          $inactiveSeconds.TotalSeconds -gt $Global:TimeWaitMax
+        ) {
+          $reason = @()
+          if (($CurrentMousePosition.X -eq $script:LastMousePosition.X) -and
+            ($CurrentMousePosition.Y -eq $script:LastMousePosition.Y)) {
+            $reason += "No mouse movement"
+          }
+          if (-not $keyPressed) {
+            $reason += "No key pressed"
+          }
+          if (-not $mouseClicked) {
+            $reason += "No mouse click"
+          }
+          $reasonStr = $reason -join ", "
+          Write-Message -LogMessage "Dimming screen because: $reasonStr. Mouse: $CurrentMousePosition, Last: $script:LastMousePosition, KeyPressed: $keyPressed, MouseClicked: $mouseClicked" -Type "Warning"
+          Set-ScreenBrightness -Level $Global:BrightnessMin
+          Write-Host "------------- $Global:BrightnessInitial / $Global:BrightnessMin"
+        }
+        return $false
+      }
+    } catch {
+      Write-Message -LogMessage "Error checking user activity: $($_.Exception.Message)" -Type "Critical"
+      return $false
     }
-
-    # Get the current mouse position
-    $current = [System.Windows.Forms.Cursor]::Position
-
-    # Compare current and last mouse positions
-    if ($current.X -ne $script:LastMousePosition.X -or $current.Y -ne $script:LastMousePosition.Y) {
-      $script:LastMousePosition = $current
-      # Log the event with calculated wait time
-      Write-Message -LogMessage "User activity detected. Pausing the script for '$(Time-Delta-Humanize (New-TimeSpan -Seconds $TimeWaitMax))'." -Type "Info"
-      return $true
-    }
-
-    # No movement detected
-    return $false
-
-  } catch {
-    Write-Message -LogMessage "Error checking user activity: $($_.Exception.Message)" -Type "Critical"
-    return $false
-  }
 }
 
 
@@ -543,42 +607,42 @@ function Open-Close-Edge-Tab {
 }
 
 
-function Change-Screen-Brightness {
-    <#
-        .SYNOPSIS
-        Adjusts the screen brightness level.
-    
-        .DESCRIPTION
-        Sets the screen brightness to a specified level ("min" or "max").
-    
-        .PARAMETER State
-        A text indicating the desired brightness level ("min" or "max").
-    
-        .OUTPUTS
-        None
-    #>
+function Set-ScreenBrightness {
+  <#
+    .SYNOPSIS
+    Adjusts the screen brightness level.
+
+    .DESCRIPTION
+    Sets the screen brightness to a specified level (either $Global:BrightnessInitial or $Global:BrightnessMin).
+
+    .PARAMETER Level
+    The desired brightness level. Must be either $Global:BrightnessInitial or $Global:BrightnessMin.
+
+    .OUTPUTS
+    None
+  #>
 
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("min","max")] # Restrict State parameter to "min" or "max"
-    [string]$State
+    [Parameter(Mandatory = $true)]
+    [int]$Level
   )
 
   try {
-    # Change the brightness only if requested
-    if ($BrightnessFlag) {
-      # Get the current screen brightness level
-      $CurrentBrightness = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness
+    # Get the current brightness level
+    $CurrentBrightness = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness
 
-      # Determine the target brightness based on the State parameter
-      $TargetBrightness = if ($State -eq "min") { $BrightnessMin } elseif ($State -eq "max") { $BrightnessMax } else { Write-Error "Invalid State parameter. Must be 'min' or 'max'."; return }
+    if ($Level -ne $CurrentBrightness) {
+      # Log the brightness change
+      Write-Message -LogMessage "The screen brightness will be changed from $CurrentBrightness% to $Level%." -Type "Info"
 
-      # Log the event
-      Write-Message -LogMessage "The screen brightness will be changed from $CurrentBrightness% to $TargetBrightness%." -Type "Info"
-
-      # Change the brightness of the screen
-      (Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,$TargetBrightness)
+      # Set the brightness level using CIM method (works on most modern systems)
+      $BrightnessInstance = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods
+      if ($BrightnessInstance) {
+        Invoke-CimMethod -InputObject $BrightnessInstance -MethodName "WmiSetBrightness" -Arguments @{Timeout=0; Brightness=$Level} | Out-Null
+      } else {
+        Write-Message -LogMessage "WmiSetBrightness CIM method not available on this device." -Type "Warning"
+      }
     }
   } catch {
     Write-Message -LogMessage "Error adjusting screen brightness: $($_.Exception.Message)" -Type "Critical"
