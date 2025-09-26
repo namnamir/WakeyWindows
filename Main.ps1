@@ -60,9 +60,16 @@ while (
     # Load configurations for the current iteration as they might change
     . .\Config.ps1
 
-    # Check if the user is active, pause until the user is inactive
-    while (User-Is-Active) {
-      Start-Sleep -Seconds $Global:TimeWaitMax
+    # Check if the user is active; if so, wait until they are inactive
+    $pollInterval = 2
+    $activeElapsed = 0
+
+    while ($activeElapsed -lt $Global:TimeWaitMax) {
+      if (-not (User-Is-Active)) {
+        break
+      }
+      Start-Sleep -Seconds $pollInterval
+      $activeElapsed += $pollInterval
     }
 
     # Override config if arguments are provided
@@ -126,7 +133,7 @@ while (
     Write-Message "The script will be paused for $(Time-Delta-Humanize $(New-TimeSpan -Seconds $TimeWait01)); resume at $((Get-Date).AddSeconds($TimeWait01))."
     # Wait
     Start-Sleep $TimeWait01
-    
+
   } catch {
     # Handle errors during keep-alive methods or checks
     Write-Message "Error keeping system awake: $($_.Exception.Message)" -Type "Critical"
