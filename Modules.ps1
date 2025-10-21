@@ -223,6 +223,9 @@ function User-Is-Active {
     param()
 
     try {
+      # Reload configurations; it may have changed
+      . .\Config.ps1
+
       # Ensure the required assembly is loaded
       Add-Type -AssemblyName System.Windows.Forms
 
@@ -278,9 +281,11 @@ function User-Is-Active {
         $script:LastActivityTime = Get-Date
         Write-Message -LogMessage "User activity detected (mouse move, click, or keyboard). Pausing the script for '$(Time-Delta-Humanize (New-TimeSpan -Seconds $TimeWaitMax))'." -Type "Info"
         
-        if ($Global:BrightnessFlag -and $null -ne $Global:BrightnessInitial) {
+        if (
+          $Global:BrightnessFlag -and 
+          $null -ne $Global:BrightnessInitial
+        ) {
           Set-ScreenBrightness -Level $Global:BrightnessInitial
-          Write-Host "------------- $Global:BrightnessInitial"
         }
         return $true
       # No movement, click, or key detected; dim the screen if needed
@@ -307,7 +312,6 @@ function User-Is-Active {
           $reasonStr = $reason -join ", "
           Write-Message -LogMessage "Dimming screen because: $reasonStr. Mouse: $CurrentMousePosition, Last: $script:LastMousePosition, KeyPressed: $keyPressed, MouseClicked: $mouseClicked" -Type "Warning"
           Set-ScreenBrightness -Level $Global:BrightnessMin
-          Write-Host "------------- $Global:BrightnessInitial / $Global:BrightnessMin"
         }
         return $false
       }
@@ -646,68 +650,5 @@ function Set-ScreenBrightness {
     }
   } catch {
     Write-Message -LogMessage "Error adjusting screen brightness: $($_.Exception.Message)" -Type "Critical"
-  }
-}
-
-
-function Change-Teams-Status {
-    <#
-        .SYNOPSIS
-        Changes the Microsoft Teams presence status of the signed-in user.
-    
-        .DESCRIPTION
-        Connects to Microsoft Graph to update the presence information of the signed-in user.
-    
-        .PARAMETER Presence
-        The desired presence status for Microsoft Teams (e.g., "Available", "Away", "Busy", "DoNotDisturb").
-    
-        .INPUTS
-        None
-    
-        .OUTPUTS
-        None
-    #>
-
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory = $true,ValueFromPipeline = $false)]
-    [ValidateSet("Available","Away","Busy","DoNotDisturb")]
-    [string]$Presence
-  )
-
-  try {
-    # Install the Microsoft.Graph module if not already installed
-    if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
-      # Set execution policy to Unrestricted
-      Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Unrestricted -Force
-      # Install the module
-      Install-Module Microsoft.Graph -Scope CurrentUser -Force
-    }
-
-    # Connect to Microsoft Graph using modern authentication (more secure)
-    Connect-MgGraph -UseDeviceCode
-
-    #   Import-Module Microsoft.Graph.CloudCommunications
-    #   Import-Module Microsoft.Graph.Users.Actions
-
-    #   # Get the user ID
-    #   $UserID = (Get-MGUser -Userid "email@site.com").Id
-
-    #   Get-MgUserPresence -UserId $userId
-    #   Set-MgUserPresence -UserId $userId -BodyParameter $params
-
-    # Specify presence information for the signed-in user
-    $PresenceUpdate = New-Object Microsoft.Graph.Presence
-    $PresenceUpdate.Availability = $Presence
-
-    # Update the presence for the signed-in user
-    Update-MgUser -UserId "me" -Body $PresenceUpdate
-
-    # Success message
-    Write-Message "Your Microsoft Teams presence has been changed to '$Presence'." -Type "Information"
-  } catch {
-    Write-Message -LogMessage "Error changing Teams status: $($_.Exception.Message)" -Type "Critical"
-  } finally {
-    Disconnect-MgGraph
   }
 }

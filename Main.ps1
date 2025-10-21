@@ -1,11 +1,18 @@
 param(
-    [string]$Method,      # e.g. "Press-Key"
-    [string]$Arg          # e.g. "{NUMLOCK}"
+    [string]$Method,            # e.g. "Press-Key"
+    [string]$Arg,               # e.g. "{NUMLOCK}"
+    [switch]$IgnoreBrightness   # Pass -IgnoreBrightness to disable brightness changes
 )
 
 # Load modules and configurations
 . .\Modules.ps1
 . .\Config.ps1
+
+# Set brightness flag
+if ($IgnoreBrightness) { 
+  $Global:BrightnessFlag = $false
+  Write-Message -LogMessage "Brightness changes disabled via command line switch" -Type "Info"
+ }
 
 # Get the current date/time
 $CurrentTime = Get-Date
