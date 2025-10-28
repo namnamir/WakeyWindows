@@ -409,6 +409,8 @@ function Test-UserActivity {
       $script:LastMouseWheelPosition = 0
       $script:KeyStateCache = @{}
       $script:LastKeyCheckTime = [datetime]::Now
+      $script:ActivityCheckCount = 0
+      $script:LastSystemMetrics = $null
     }
 
     # Skip if less than TimeCooldown since last check
@@ -418,10 +420,14 @@ function Test-UserActivity {
 
     # Update last check time
     $script:LastCheckTime = [datetime]::Now
+    $script:ActivityCheckCount++
 
-    # Ensure the required assemblies are loaded
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -AssemblyName System.Drawing
+    # Load assemblies only once
+    if (-not $script:AssembliesLoaded) {
+      Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+      Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+      $script:AssembliesLoaded = $true
+    }
 
     # Add the GetAsyncKeyState API if not already present
     if (-not ("Win32.User32" -as [type])) {
@@ -1141,6 +1147,415 @@ function Test-ActivityPattern {
       Confidence = 0
       Reasons = @("Pattern analysis failed")
       Irregularity = 0
+    }
+  }
+}
+
+
+function Test-WorkingHours {
+  <#
+    .SYNOPSIS
+    Checks if the current time is within working hours and handles bypass options.
+    .DESCRIPTION
+    Determines if the script should run based on working hours, holidays, and bypass parameters.
+    Provides detailed messaging about why the script is or isn't running.
+    .PARAMETER CurrentTime
+    The current date/time to check.
+    .PARAMETER IgnoreWorkingHours
+    Bypass working hours restrictions.
+    .PARAMETER IgnoreHolidays
+    Bypass holiday restrictions.
+    .PARAMETER ForceRun
+    Bypass all restrictions.
+    .OUTPUTS
+    [PSCustomObject] containing working hours status and messages.
+  #>
+
+  [OutputType([PSCustomObject])]
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [datetime]$CurrentTime,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$IgnoreWorkingHours = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$IgnoreHolidays = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ForceRun = $false
+  )
+
+  try {
+    $status = @{
+      ShouldRun = $false
+      Reason = ""
+      Messages = @()
+      NextRunTime = $null
+      BypassReasons = @()
+    }
+
+    # Check if ForceRun is enabled
+    if ($ForceRun) {
+      $status.ShouldRun = $true
+      $status.Reason = "ForceRun enabled - bypassing all restrictions"
+      $status.BypassReasons += "All restrictions bypassed"
+      $status.Messages += "🚀 ForceRun enabled - running regardless of time/day restrictions"
+      return [PSCustomObject]$status
+    }
+
+    # Check if it's a working day
+    $isWorkingDay = $CurrentTime.DayOfWeek -notin $script:Config.NotWorkingDays
+    if (-not $isWorkingDay) {
+      $status.Messages += "📅 Today is $($CurrentTime.DayOfWeek) - not a working day"
+      if (-not $IgnoreWorkingHours) {
+        $status.Reason = "Not a working day"
+        $status.Messages += "❌ Script will not run on non-working days"
+        
+        # Calculate next working day
+        $nextWorkingDay = $CurrentTime
+        do {
+          $nextWorkingDay = $nextWorkingDay.AddDays(1)
+        } while ($nextWorkingDay.DayOfWeek -in $script:Config.NotWorkingDays)
+        
+        $status.NextRunTime = $nextWorkingDay.Date.Add($script:Config.TimeStart)
+        $status.Messages += "⏰ Next run: $($status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        return [PSCustomObject]$status
+      } else {
+        $status.BypassReasons += "Working day restriction bypassed"
+        $status.Messages += "✅ Working day restriction bypassed"
+      }
+    } else {
+      $status.Messages += "✅ Today is $($CurrentTime.DayOfWeek) - working day"
+    }
+
+    # Check if it's a holiday
+    $isHoliday = Test-Holiday -Date $CurrentTime -CountryCode $script:Config.CountryCode -LanguageCode $script:Config.LanguageCode
+    if ($isHoliday) {
+      $status.Messages += "🎉 Today is a public holiday"
+      if (-not $IgnoreHolidays) {
+        $status.Reason = "Public holiday"
+        $status.Messages += "❌ Script will not run on public holidays"
+        
+        # Calculate next working day after holiday
+        $nextWorkingDay = $CurrentTime.AddDays(1)
+        while ($nextWorkingDay.DayOfWeek -in $script:Config.NotWorkingDays -or 
+               (Test-Holiday -Date $nextWorkingDay -CountryCode $script:Config.CountryCode -LanguageCode $script:Config.LanguageCode)) {
+          $nextWorkingDay = $nextWorkingDay.AddDays(1)
+        }
+        
+        $status.NextRunTime = $nextWorkingDay.Date.Add($script:Config.TimeStart)
+        $status.Messages += "⏰ Next run: $($status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        return [PSCustomObject]$status
+      } else {
+        $status.BypassReasons += "Holiday restriction bypassed"
+        $status.Messages += "✅ Holiday restriction bypassed"
+      }
+    } else {
+      $status.Messages += "✅ Today is not a public holiday"
+    }
+
+    # Check if it's within working hours
+    $isWithinHours = $CurrentTime -ge $script:Config.TimeStart -and $CurrentTime -le $script:Config.TimeEnd
+    if (-not $isWithinHours) {
+      $status.Messages += "🕐 Current time: $($CurrentTime.ToString('HH:mm:ss'))"
+      $status.Messages += "⏰ Working hours: $($script:Config.TimeStart.ToString('HH:mm:ss')) - $($script:Config.TimeEnd.ToString('HH:mm:ss'))"
+      
+      if (-not $IgnoreWorkingHours) {
+        $status.Reason = "Outside working hours"
+        $status.Messages += "❌ Script will not run outside working hours"
+        
+        # Calculate next run time
+        if ($CurrentTime -lt $script:Config.TimeStart) {
+          # Before start time - run today
+          $status.NextRunTime = $CurrentTime.Date.Add($script:Config.TimeStart)
+        } else {
+          # After end time - run tomorrow
+          $nextDay = $CurrentTime.Date.AddDays(1)
+          # Skip non-working days and holidays
+          while ($nextDay.DayOfWeek -in $script:Config.NotWorkingDays -or 
+                 (Test-Holiday -Date $nextDay -CountryCode $script:Config.CountryCode -LanguageCode $script:Config.LanguageCode)) {
+            $nextDay = $nextDay.AddDays(1)
+          }
+          $status.NextRunTime = $nextDay.Add($script:Config.TimeStart)
+        }
+        
+        $status.Messages += "⏰ Next run: $($status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        return [PSCustomObject]$status
+      } else {
+        $status.BypassReasons += "Working hours restriction bypassed"
+        $status.Messages += "✅ Working hours restriction bypassed"
+      }
+    } else {
+      $status.Messages += "✅ Current time is within working hours"
+    }
+
+    # Check if it's during a break
+    $isDuringBreak = $false
+    $breakInfo = ""
+    
+    if ($CurrentTime -ge $script:Config.TimeBreak01 -and $CurrentTime -le $script:Config.TimeBreak01.AddMinutes($script:Config.DurationBreak01)) {
+      $isDuringBreak = $true
+      $breakInfo = "Break 1 ($($script:Config.TimeBreak01.ToString('HH:mm')) - $($script:Config.TimeBreak01.AddMinutes($script:Config.DurationBreak01).ToString('HH:mm')))"
+    } elseif ($CurrentTime -ge $script:Config.TimeBreak02 -and $CurrentTime -le $script:Config.TimeBreak02.AddMinutes($script:Config.DurationBreak02)) {
+      $isDuringBreak = $true
+      $breakInfo = "Break 2 ($($script:Config.TimeBreak02.ToString('HH:mm')) - $($script:Config.TimeBreak02.AddMinutes($script:Config.DurationBreak02).ToString('HH:mm')))"
+    } elseif ($CurrentTime -ge $script:Config.TimeBreak03 -and $CurrentTime -le $script:Config.TimeBreak03.AddMinutes($script:Config.DurationBreak03)) {
+      $isDuringBreak = $true
+      $breakInfo = "Break 3 ($($script:Config.TimeBreak03.ToString('HH:mm')) - $($script:Config.TimeBreak03.AddMinutes($script:Config.DurationBreak03).ToString('HH:mm')))"
+    }
+
+    if ($isDuringBreak) {
+      $status.Messages += "☕ Currently during $breakInfo"
+      $status.Messages += "✅ Script will run during breaks"
+    } else {
+      $status.Messages += "✅ Not during any scheduled break"
+    }
+
+    # All checks passed
+    $status.ShouldRun = $true
+    $status.Reason = "All conditions met"
+    $status.Messages += "✅ All working hours conditions met - script will run"
+
+    return [PSCustomObject]$status
+  } catch {
+    Write-Message -LogMessage "Error checking working hours: $($_.Exception.Message)" -Type "Critical"
+    return [PSCustomObject]@{
+      ShouldRun = $false
+      Reason = "Error checking working hours"
+      Messages = @("❌ Error checking working hours: $($_.Exception.Message)")
+      NextRunTime = $null
+      BypassReasons = @()
+    }
+  }
+}
+
+
+function Get-ResourceUsage {
+  <#
+    .SYNOPSIS
+    Gets current resource usage information for monitoring efficiency.
+    .DESCRIPTION
+    Monitors CPU, memory, and other resource usage to help optimize script performance.
+    .OUTPUTS
+    [PSCustomObject] containing resource usage information.
+  #>
+
+  [OutputType([PSCustomObject])]
+  [CmdletBinding()]
+  param()
+
+  try {
+    $process = Get-Process -Id $PID -ErrorAction SilentlyContinue
+    $memory = [System.GC]::GetTotalMemory($false)
+    
+    $usage = @{
+      ProcessId = $PID
+      WorkingSet = if ($process) { $process.WorkingSet64 } else { 0 }
+      PrivateMemory = if ($process) { $process.PrivateMemorySize64 } else { 0 }
+      GCMemory = $memory
+      ThreadCount = if ($process) { $process.Threads.Count } else { 0 }
+      HandleCount = if ($process) { $process.HandleCount } else { 0 }
+      CpuTime = if ($process) { $process.TotalProcessorTime } else { [TimeSpan]::Zero }
+    }
+
+    return [PSCustomObject]$usage
+  } catch {
+    return [PSCustomObject]@{
+      ProcessId = $PID
+      WorkingSet = 0
+      PrivateMemory = 0
+      GCMemory = 0
+      ThreadCount = 0
+      HandleCount = 0
+      CpuTime = [TimeSpan]::Zero
+    }
+  }
+}
+
+
+function Optimize-ScriptPerformance {
+  <#
+    .SYNOPSIS
+    Optimizes script performance by adjusting settings based on resource usage.
+    .DESCRIPTION
+    Monitors resource usage and adjusts script behavior to maintain efficiency.
+    .OUTPUTS
+    None
+  #>
+
+  [CmdletBinding()]
+  param()
+
+  try {
+    $resourceUsage = Get-ResourceUsage
+    
+    # Adjust cooldown based on memory usage
+    if ($resourceUsage.WorkingSet -gt 100MB) {
+      $script:Config.TimeCooldown = [Math]::Min($script:Config.TimeCooldown + 1, 10)
+      Write-Message -LogMessage "Increased cooldown to $($script:Config.TimeCooldown)s due to high memory usage" -Type "Info"
+    } elseif ($resourceUsage.WorkingSet -lt 50MB) {
+      $script:Config.TimeCooldown = [Math]::Max($script:Config.TimeCooldown - 1, 1)
+    }
+
+    # Force garbage collection if memory usage is high
+    if ($resourceUsage.GCMemory -gt 50MB) {
+      [System.GC]::Collect()
+      [System.GC]::WaitForPendingFinalizers()
+      Write-Message -LogMessage "Performed garbage collection due to high memory usage" -Type "Info"
+    }
+
+    # Log resource usage periodically
+    if ($script:ActivityCheckCount -and $script:ActivityCheckCount % 100 -eq 0) {
+      Write-Message -LogMessage "Resource usage - Memory: $([Math]::Round($resourceUsage.WorkingSet / 1MB, 2))MB, Threads: $($resourceUsage.ThreadCount), Handles: $($resourceUsage.HandleCount)" -Type "Info"
+    }
+  } catch {
+    # Ignore optimization errors
+  }
+}
+
+
+function Get-ScriptStatus {
+  <#
+    .SYNOPSIS
+    Gets current script status and performance information.
+    .DESCRIPTION
+    Provides comprehensive status information including resource usage, activity detection, and configuration.
+    .OUTPUTS
+    [PSCustomObject] containing script status information.
+  #>
+
+  [OutputType([PSCustomObject])]
+  [CmdletBinding()]
+  param()
+
+  try {
+    $resourceUsage = Get-ResourceUsage
+    $workingHoursInfo = Get-WorkingHoursInfo
+    
+    $status = @{
+      ScriptRunning = $true
+      StartTime = if ($script:ScriptStartTime) { $script:ScriptStartTime } else { Get-Date }
+      Uptime = if ($script:ScriptStartTime) { (Get-Date) - $script:ScriptStartTime } else { [TimeSpan]::Zero }
+      ActivityChecks = if ($script:ActivityCheckCount) { $script:ActivityCheckCount } else { 0 }
+      ResourceUsage = $resourceUsage
+      WorkingHours = $workingHoursInfo
+      BrightnessState = if ($script:BrightnessState) { $script:BrightnessState } else { "Unknown" }
+      LastActivity = if ($script:LastActivityTime) { $script:LastActivityTime } else { "Unknown" }
+      Config = @{
+        KeepAliveMethod = $script:Config.KeepAliveMethod
+        TimeWaitMin = $script:Config.TimeWaitMin
+        TimeWaitMax = $script:Config.TimeWaitMax
+        BrightnessFlag = $script:Config.BrightnessFlag
+        EnergyEfficiencyMode = $script:Config.EnergyEfficiencyMode
+      }
+    }
+
+    return [PSCustomObject]$status
+  } catch {
+    return [PSCustomObject]@{
+      ScriptRunning = $false
+      Error = $_.Exception.Message
+    }
+  }
+}
+
+
+function Show-ScriptHelp {
+  <#
+    .SYNOPSIS
+    Shows comprehensive help information for the WakeyWindows script.
+    .DESCRIPTION
+    Displays detailed help information including parameters, examples, and usage tips.
+    .OUTPUTS
+    None
+  #>
+
+  [CmdletBinding()]
+  param()
+
+  Write-Host "`n🚀 WakeyWindows - Keep Your PC Awake Script" -ForegroundColor Cyan
+  Write-Host "=" * 50 -ForegroundColor Cyan
+  
+  Write-Host "`n📋 PARAMETERS:" -ForegroundColor Yellow
+  Write-Host "  -Method <string>           : Keep-alive method (Send-KeyPress, Start-AppSession, etc.)" -ForegroundColor White
+  Write-Host "  -Arg <string>              : Argument for the method (e.g., F16, Notepad)" -ForegroundColor White
+  Write-Host "  -IgnoreBrightness          : Disable brightness control" -ForegroundColor White
+  Write-Host "  -IgnoreWorkingHours        : Bypass time restrictions" -ForegroundColor White
+  Write-Host "  -IgnoreHolidays            : Bypass holiday restrictions" -ForegroundColor White
+  Write-Host "  -ForceRun                  : Bypass ALL restrictions" -ForegroundColor White
+  
+  Write-Host "`n🔧 EXAMPLES:" -ForegroundColor Yellow
+  Write-Host "  .\Main.ps1 -Method Send-KeyPress -Arg F16" -ForegroundColor Green
+  Write-Host "  .\Main.ps1 -Method Start-AppSession -Arg Notepad -IgnoreBrightness" -ForegroundColor Green
+  Write-Host "  .\Main.ps1 -Method Send-KeyPress -Arg F16 -ForceRun" -ForegroundColor Green
+  Write-Host "  .\Main.ps1 -Method Random -IgnoreWorkingHours" -ForegroundColor Green
+  
+  Write-Host "`n⚡ KEEP-ALIVE METHODS:" -ForegroundColor Yellow
+  Write-Host "  Send-KeyPress              : Press a key (most efficient)" -ForegroundColor White
+  Write-Host "  Start-AppSession           : Open/close applications" -ForegroundColor White
+  Write-Host "  Start-EdgeSession          : Open/close web pages" -ForegroundColor White
+  Write-Host "  Invoke-CMDlet              : Run PowerShell commands" -ForegroundColor White
+  Write-Host "  Move-MouseRandom           : Move mouse cursor" -ForegroundColor White
+  Write-Host "  Random                     : Randomly choose method" -ForegroundColor White
+  
+  Write-Host "`n💡 TIPS:" -ForegroundColor Yellow
+  Write-Host "  • Use -ForceRun to run anytime" -ForegroundColor White
+  Write-Host "  • Use -IgnoreBrightness to disable screen dimming" -ForegroundColor White
+  Write-Host "  • Send-KeyPress is most energy efficient" -ForegroundColor White
+  Write-Host "  • Check Config.ps1 for customization options" -ForegroundColor White
+  
+  Write-Host "`n📖 For detailed help: Get-Help .\Main.ps1 -Full" -ForegroundColor Cyan
+  Write-Host "=" * 50 -ForegroundColor Cyan
+}
+
+
+function Get-WorkingHoursInfo {
+  <#
+    .SYNOPSIS
+    Gets detailed information about working hours configuration.
+    .DESCRIPTION
+    Provides comprehensive information about working hours, breaks, holidays, and scheduling.
+    .OUTPUTS
+    [PSCustomObject] containing working hours information.
+  #>
+
+  [OutputType([PSCustomObject])]
+  [CmdletBinding()]
+  param()
+
+  try {
+    $info = @{
+      WorkingDays = $script:Config.NotWorkingDays
+      WorkingHours = "$($script:Config.TimeStart.ToString('HH:mm')) - $($script:Config.TimeEnd.ToString('HH:mm'))"
+      Breaks = @()
+      HolidayCountry = $script:Config.CountryCode
+      HolidayLanguage = $script:Config.LanguageCode
+      CurrentTime = Get-Date
+      IsWorkingDay = (Get-Date).DayOfWeek -notin $script:Config.NotWorkingDays
+      IsWithinHours = (Get-Date) -ge $script:Config.TimeStart -and (Get-Date) -le $script:Config.TimeEnd
+      IsHoliday = Test-Holiday -Date (Get-Date) -CountryCode $script:Config.CountryCode -LanguageCode $script:Config.LanguageCode
+    }
+
+    # Add break information
+    $info.Breaks += "Break 1: $($script:Config.TimeBreak01.ToString('HH:mm')) - $($script:Config.TimeBreak01.AddMinutes($script:Config.DurationBreak01).ToString('HH:mm')) ($($script:Config.DurationBreak01) min)"
+    $info.Breaks += "Break 2: $($script:Config.TimeBreak02.ToString('HH:mm')) - $($script:Config.TimeBreak02.AddMinutes($script:Config.DurationBreak02).ToString('HH:mm')) ($($script:Config.DurationBreak02) min)"
+    $info.Breaks += "Break 3: $($script:Config.TimeBreak03.ToString('HH:mm')) - $($script:Config.TimeBreak03.AddMinutes($script:Config.DurationBreak03).ToString('HH:mm')) ($($script:Config.DurationBreak03) min)"
+
+    return [PSCustomObject]$info
+  } catch {
+    Write-Message -LogMessage "Error getting working hours info: $($_.Exception.Message)" -Type "Warning"
+    return [PSCustomObject]@{
+      WorkingDays = @()
+      WorkingHours = "Unknown"
+      Breaks = @()
+      HolidayCountry = "Unknown"
+      HolidayLanguage = "Unknown"
+      CurrentTime = Get-Date
+      IsWorkingDay = $false
+      IsWithinHours = $false
+      IsHoliday = $false
     }
   }
 }

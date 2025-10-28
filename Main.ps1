@@ -1,12 +1,26 @@
 param(
     [string]$Method,            # e.g. "Send-KeyPress"
     [string]$Arg,               # e.g. "{NUMLOCK}"
-    [switch]$IgnoreBrightness   # Pass -IgnoreBrightness to disable brightness changes
+    [switch]$IgnoreBrightness,  # Pass -IgnoreBrightness to disable brightness changes
+    [switch]$IgnoreWorkingHours, # Pass -IgnoreWorkingHours to bypass time restrictions
+    [switch]$IgnoreHolidays,    # Pass -IgnoreHolidays to bypass holiday restrictions
+    [switch]$ForceRun,          # Pass -ForceRun to bypass ALL restrictions (time, holidays, etc.)
+    [switch]$Help               # Pass -Help to show help information
 )
+
+# Show help if requested
+if ($Help) {
+  . .\Modules.ps1
+  Show-ScriptHelp
+  exit 0
+}
 
 # Load modules and configurations
 . .\Modules.ps1
 . .\Config.ps1
+
+# Track script start time for status monitoring
+$script:ScriptStartTime = Get-Date
 
 # Set up cleanup handler for script interruption
 $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
@@ -21,6 +35,38 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
 
 # Get the current date/time
 $CurrentTime = Get-Date
+
+# Check working hours and bypass options
+$workingHoursStatus = Test-WorkingHours -CurrentTime $CurrentTime -IgnoreWorkingHours $IgnoreWorkingHours -IgnoreHolidays $IgnoreHolidays -ForceRun $ForceRun
+
+# Display working hours status
+foreach ($message in $workingHoursStatus.Messages) {
+  Write-Message -LogMessage $message -Type "Info"
+}
+
+# Check if we should run
+if (-not $workingHoursStatus.ShouldRun) {
+  Write-Message -LogMessage "Script will not run: $($workingHoursStatus.Reason)" -Type "Warning"
+  if ($workingHoursStatus.NextRunTime) {
+    Write-Message -LogMessage "Next scheduled run: $($workingHoursStatus.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Type "Info"
+  }
+  
+  # Add helpful hints
+  Write-Message -LogMessage "💡 Need to run outside working hours? Try these options:" -Type "Info"
+  Write-Message -LogMessage "   -IgnoreWorkingHours  : Bypass time restrictions" -Type "Info"
+  Write-Message -LogMessage "   -IgnoreHolidays      : Bypass holiday restrictions" -Type "Info"
+  Write-Message -LogMessage "   -ForceRun            : Bypass ALL restrictions" -Type "Info"
+  Write-Message -LogMessage "   -IgnoreBrightness    : Disable brightness control" -Type "Info"
+  Write-Message -LogMessage "📖 For more help: Get-Help .\Main.ps1 -Full" -Type "Info"
+  Write-Message -LogMessage "🔧 Example: .\Main.ps1 -Method Send-KeyPress -Arg F16 -ForceRun" -Type "Info"
+  
+  exit 0
+}
+
+# Display bypass information if any
+if ($workingHoursStatus.BypassReasons.Count -gt 0) {
+  Write-Message -LogMessage "Bypass options active: $($workingHoursStatus.BypassReasons -join ', ')" -Type "Info"
+}
 
 # Handle the log file
 if ($script:Config.TranscriptStarted) {
@@ -49,22 +95,7 @@ if ($script:Config.TranscriptStarted) {
     Write-Message -LogMessage "Transcription started: $($script:Config.TranscriptFileLocation)" -Type "Info"
 }
 
-while (
-  # Check if we are in the working days
-  ($CurrentTime.DayOfWeek -notin $script:Config.NotWorkingDays) -and
-  # Check if we are in the working hours
-  ($CurrentTime -gt $script:Config.TimeStart) -and
-  ($CurrentTime -lt $script:Config.TimeEnd) -and
-  # Check if we are in any of the breaks
-  (
-    ($CurrentTime -lt $script:Config.TimeBreak01) -or
-    ($CurrentTime -gt $script:Config.TimeBreak01.AddMinutes($script:Config.DurationBreak01)) -or
-    ($CurrentTime -lt $script:Config.TimeBreak02) -or
-    ($CurrentTime -gt $script:Config.TimeBreak02.AddMinutes($script:Config.DurationBreak02)) -or
-    ($CurrentTime -lt $script:Config.TimeBreak03) -or
-    ($CurrentTime -gt $script:Config.TimeBreak03.AddMinutes($script:Config.DurationBreak03))
-  )
-) {
+while ($true) {
   try {
     # Set the maximum wait time based on power status
     Set-TimeWaitMax-FromPowerStatu
@@ -89,6 +120,9 @@ while (
       Start-Sleep -Seconds $pollInterval
       $activeElapsed += $pollInterval
     }
+
+    # Optimize performance periodically
+    Optimize-ScriptPerformance
 
     # Override config if arguments are provided
     if ($Method) {
@@ -149,6 +183,29 @@ while (
     $TimeWait01 = Get-Random -Minimum $script:Config.TimeWaitMin -Maximum $script:Config.TimeWaitMax
     # Log the event
     Write-Message -LogMessage "The script will be paused for $(Convert-TimeSpanToHumanReadable $(New-TimeSpan -Seconds $TimeWait01)); resume at $((Get-Date).AddSeconds($TimeWait01))."
+    
+    # Check if we should continue running (re-evaluate working hours periodically)
+    $currentTime = Get-Date
+    if (-not $ForceRun -and -not $IgnoreWorkingHours -and -not $IgnoreHolidays) {
+      # Check if we've moved outside working hours
+      if ($currentTime -gt $script:Config.TimeEnd) {
+        Write-Message -LogMessage "Working hours ended. Script will stop." -Type "Info"
+        break
+      }
+      
+      # Check if it's no longer a working day (in case we're running overnight)
+      if ($currentTime.DayOfWeek -in $script:Config.NotWorkingDays) {
+        Write-Message -LogMessage "Non-working day detected. Script will stop." -Type "Info"
+        break
+      }
+      
+      # Check if it's now a holiday
+      if (Test-Holiday -Date $currentTime -CountryCode $script:Config.CountryCode -LanguageCode $script:Config.LanguageCode) {
+        Write-Message -LogMessage "Public holiday detected. Script will stop." -Type "Info"
+        break
+      }
+    }
+    
     # Wait
     Start-Sleep $TimeWait01
 
@@ -159,34 +216,6 @@ while (
     Start-Sleep -Seconds 60
   }
 
-  # Stop running if there is no working hours
-  if ((Get-Date) -gt $script:Config.TimeEnd) {
-    # Get the starting next starting time of the tomorrow
-    $script:Config.TimeStartTomorrow = $script:Config.TimeStart.AddMinutes($(Get-Random -Minimum -5 -Maximum 15)).AddDays(1)
-
-    # If tomorrow is in weekend or a public holiday
-    if (
-      ($script:Config.TimeStartTomorrow.DayOfWeek -in $script:Config.NotWorkingDays) -or
-      (Test-Holiday -Date $script:Config.TimeStartTomorrow -CountryCode $script:Config.CountryCode -LanguageCode $script:Config.LanguageCode)
-    ) {
-      $TimeWait02 = ($script:Config.TimeStartTomorrow.AddDays(1) - (Get-Date)).TotalSeconds
-
-      # Log message
-      $LogMessage02 = "The working hour is passed and tomorrow is a holiday; so the script will be paused for"
-    }
-    else {
-      $TimeWait02 = ($script:Config.TimeStartTomorrow - (Get-Date)).TotalSeconds
-
-      # Log message
-      $LogMessage02 = "The working hour is passed; so the script will be paused for"
-    }
-
-    # Log the event
-    Write-Message -LogMessage "$LogMessage02 $(Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $TimeWait02)); resume at $((Get-Date).AddSeconds($TimeWait02))."
-
-    # Wait until the next working day
-    Start-Sleep $TimeWait02
-  }
 }
 
 # Stop activity detection and clean up resources
