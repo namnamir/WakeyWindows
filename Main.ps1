@@ -19,12 +19,6 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
   }
 }
 
-# Set brightness flag
-if ($IgnoreBrightness) {
-  $script:Config.BrightnessFlag = $false
-  Write-Message -LogMessage "Brightness changes disabled via command line switch" -Type "Info"
- }
-
 # Get the current date/time
 $CurrentTime = Get-Date
 
@@ -77,6 +71,12 @@ while (
 
     # Load configurations for the current iteration as they might change
     . .\Config.ps1
+    
+    # Apply command line brightness override after config reload
+    if ($IgnoreBrightness) {
+      $script:Config.BrightnessFlag = $false
+      Write-Message -LogMessage "Brightness changes disabled via command line switch" -Type "Info"
+    }
 
     # Check if the user is active; if so, wait until they are inactive
     $pollInterval = 2

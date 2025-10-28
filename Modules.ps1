@@ -194,43 +194,38 @@ function Get-ActivityStatus {
   <#
     .SYNOPSIS
     Gets detailed user activity status including mouse movements, key presses, and system events.
-
     .DESCRIPTION
     Analyzes user activity by comparing current and previous system states including mouse positions,
     keyboard input, mouse clicks, window focus changes, and other system events. Returns detailed 
     information about what specifically changed with improved accuracy and performance.
-
     .PARAMETER CurrentMousePosition
     Current coordinates of the mouse cursor.
-
     .PARAMETER LastMousePosition
     Previous coordinates of the mouse cursor to compare against.
-
     .PARAMETER KeyPressed
     The specific key that was pressed, if any.
-
     .PARAMETER MouseClicked
     Array of mouse buttons that were clicked (Left, Right, Middle).
-
     .PARAMETER WindowTitle
     Current active window title.
-
     .PARAMETER LastWindowTitle
     Previous active window title.
-
     .PARAMETER MouseWheelDelta
     Mouse wheel movement delta.
-
     .PARAMETER MovementThreshold
     Minimum pixel movement to consider as activity (default: 3).
-
+    .PARAMETER TypingActivity
+    Typing activity information including typing speed and pattern.
+    .PARAMETER TrackpadGestures
+    Array of trackpad gestures detected.
     .OUTPUTS
     [PSCustomObject] containing:
     - IsActive: True if any user activity detected
     - Reasons: Array of detailed status messages
     - ActivityType: Type of activity detected
     - Confidence: Confidence level (0-100) of activity detection
-
+    - InputDevice: Type of input device used (Mouse, Trackpad)
+    - GestureType: Type of trackpad gesture detected
     .EXAMPLE
     $status = Get-ActivityStatus -CurrentMousePosition $pos -LastMousePosition $lastPos -KeyPressed "a"
   #>
@@ -726,30 +721,25 @@ function Test-UserActivity {
       # Log activity with enhanced details
       Write-Message -LogMessage "User activity detected ($($activityStatus.ActivityType)): $($activityStatus.Reasons -join ' | '). Pausing script for '$(Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $script:Config.TimeWaitMax))'." -Type "Info"
 
-      # Reset brightness if configured
-      if (
-        $script:Config.BrightnessFlag -and
-        $null -ne $script:Config.BrightnessInitial -and
-        $script:BrightnessState -ne "Normal"
-      ) {
+      # Reset brightness and energy efficiency if configured
+      if ($script:Config.BrightnessFlag -and $script:BrightnessState -ne "Normal") {
           $script:BrightnessState = "Normal"
-          Write-Message -LogMessage "Restored screen brightness to initial level ($($script:Config.BrightnessInitial)%) due to user activity." -Type "Info"
-          Set-ScreenBrightness -Level $script:Config.BrightnessInitial
+          Write-Message -LogMessage "Restoring energy efficiency settings due to user activity." -Type "Info"
+          Set-EnergyEfficiencyMode -Mode "Normal"
       }
       return $true
     }
     else {
       $inactiveSeconds = [datetime]::Now - $script:LastActivityTime
 
-      # Dim screen if inactive for too long
+      # Apply energy efficiency measures if inactive for too long
       if ($script:Config.BrightnessFlag -and 
-        $null -ne $script:Config.BrightnessMin -and 
         $inactiveSeconds.TotalSeconds -gt $script:Config.TimeWaitMax -and
         $script:BrightnessState -eq "Normal"
       ) {
           $script:BrightnessState = "Dimmed"
-          Write-Message -LogMessage "Dimming screen due to inactivity: $($activityStatus.Reasons -join ' | ')" -Type "Warning"
-          Set-ScreenBrightness -Level $script:Config.BrightnessMin
+          Write-Message -LogMessage "Applying energy efficiency measures due to inactivity: $($activityStatus.Reasons -join ' | ')" -Type "Warning"
+          Set-EnergyEfficiencyMode -Mode $script:Config.EnergyEfficiencyMode
       }
       return $false
     }
@@ -1040,13 +1030,13 @@ function Stop-ActivityDetection {
       # Ignore errors during cleanup
     }
 
-    # Reset brightness to initial level if it was changed
-    if ($script:Config.BrightnessFlag -and $null -ne $script:Config.BrightnessInitial) {
+    # Reset energy efficiency settings to normal
+    if ($script:Config.BrightnessFlag) {
       try {
-        Set-ScreenBrightness -Level $script:Config.BrightnessInitial
-        Write-Message -LogMessage "Screen brightness restored to initial level ($($script:Config.BrightnessInitial)%)" -Type "Info"
+        Set-EnergyEfficiencyMode -Mode "Normal"
+        Write-Message -LogMessage "Energy efficiency settings restored to normal" -Type "Info"
       } catch {
-        Write-Message -LogMessage "Failed to restore screen brightness: $($_.Exception.Message)" -Type "Warning"
+        Write-Message -LogMessage "Failed to restore energy efficiency settings: $($_.Exception.Message)" -Type "Warning"
       }
     }
 
@@ -1421,11 +1411,18 @@ function Start-EdgeSession {
 function Set-ScreenBrightness {
   <#
     .SYNOPSIS
-    Adjusts the screen brightness level.
+    Adjusts the screen brightness level with multi-monitor support and smooth transitions.
     .DESCRIPTION
-    Sets the screen brightness to a specified level (either $script:Config.BrightnessInitial or $script:Config.BrightnessMin).
+    Sets the screen brightness to a specified level with support for multiple monitors,
+    smooth transitions, and various energy efficiency features.
     .PARAMETER Level
-    The desired brightness level. Must be either $script:Config.BrightnessInitial or $script:Config.BrightnessMin.
+    The desired brightness level (0-100).
+    .PARAMETER SmoothTransition
+    Enable smooth brightness transitions instead of instant changes.
+    .PARAMETER MonitorIndex
+    Specific monitor index to adjust (0 for all monitors).
+    .PARAMETER TurnOffMonitors
+    Turn off monitors instead of just dimming them.
     .OUTPUTS
     None
   #>
@@ -1433,26 +1430,243 @@ function Set-ScreenBrightness {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory = $true)]
-    [int]$Level
+    [ValidateRange(0, 100)]
+    [int]$Level,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SmoothTransition,
+
+    [Parameter(Mandatory = $false)]
+    [int]$MonitorIndex = 0,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$TurnOffMonitors = $false
   )
 
   try {
-    # Get the current brightness level
-    $CurrentBrightness = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness
+    # If turning off monitors, use a different approach
+    if ($TurnOffMonitors -and $Level -eq 0) {
+      Set-MonitorPower -State "Off"
+      return
+    }
 
-    if ($Level -ne $CurrentBrightness) {
-      # Log the brightness change
-      Write-Message -LogMessage "The screen brightness will be changed from $CurrentBrightness% to $Level%." -Type "Info"
+    # Get all monitors
+    $monitors = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue
+    
+    if (-not $monitors) {
+      Write-Message -LogMessage "No monitors found for brightness control." -Type "Warning"
+      return
+    }
 
-      # Set the brightness level using CIM method (works on most modern systems)
-      $BrightnessInstance = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods
-      if ($BrightnessInstance) {
-        Invoke-CimMethod -InputObject $BrightnessInstance -MethodName "WmiSetBrightness" -Arguments @{Timeout=0; Brightness=$Level} | Out-Null
-      } else {
-        Write-Message -LogMessage "WmiSetBrightness CIM method not available on this device." -Type "Warning"
+    # If MonitorIndex is 0, adjust all monitors
+    $monitorsToAdjust = if ($MonitorIndex -eq 0) { $monitors } else { $monitors | Select-Object -Index ($MonitorIndex - 1) }
+
+    foreach ($monitor in $monitorsToAdjust) {
+      $currentBrightness = $monitor.CurrentBrightness
+      
+      if ($Level -ne $currentBrightness) {
+        Write-Message -LogMessage "Adjusting monitor brightness from $currentBrightness% to $Level%." -Type "Info"
+
+        if ($SmoothTransition -or $script:Config.BrightnessSmoothTransition) {
+          # Smooth transition
+          $steps = [Math]::Abs($Level - $currentBrightness)
+          $stepSize = if ($steps -gt 0) { ($Level - $currentBrightness) / $steps } else { 0 }
+          
+          for ($i = 1; $i -le $steps; $i++) {
+            $intermediateLevel = [Math]::Round($currentBrightness + ($stepSize * $i))
+            $intermediateLevel = [Math]::Max(0, [Math]::Min(100, $intermediateLevel))
+            
+            try {
+              $brightnessMethods = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods
+              if ($brightnessMethods) {
+                Invoke-CimMethod -InputObject $brightnessMethods -MethodName "WmiSetBrightness" -Arguments @{Timeout=0; Brightness=$intermediateLevel} | Out-Null
+              }
+            } catch {
+              # Continue with next step even if one fails
+            }
+            
+            Start-Sleep -Milliseconds 50  # Smooth transition delay
+          }
+        } else {
+          # Instant change
+          try {
+            $brightnessMethods = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods
+            if ($brightnessMethods) {
+              Invoke-CimMethod -InputObject $brightnessMethods -MethodName "WmiSetBrightness" -Arguments @{Timeout=0; Brightness=$Level} | Out-Null
+            }
+          } catch {
+            Write-Message -LogMessage "Failed to set brightness using WMI method." -Type "Warning"
+          }
+        }
       }
     }
   } catch {
     Write-Message -LogMessage "Error adjusting screen brightness: $($_.Exception.Message)" -Type "Critical"
+  }
+}
+
+
+function Set-MonitorPower {
+  <#
+    .SYNOPSIS
+    Controls monitor power state (on/off) for energy efficiency.
+    .DESCRIPTION
+    Turns monitors on or off to save energy when user is inactive.
+    .PARAMETER State
+    Monitor power state: "On", "Off", or "Standby".
+    .OUTPUTS
+    None
+  #>
+
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("On", "Off", "Standby")]
+    [string]$State
+  )
+
+  try {
+    # Use Windows API to control monitor power
+    Add-Type -TypeDefinition @"
+      using System;
+      using System.Runtime.InteropServices;
+      public class MonitorPower {
+        [DllImport("user32.dll")]
+        public static extern int SendMessage(IntPtr hWnd, int hMsg, IntPtr wParam, IntPtr lParam);
+        
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetDesktopWindow();
+        
+        public const int WM_SYSCOMMAND = 0x0112;
+        public const int SC_MONITORPOWER = 0xF170;
+        public const int MONITOR_ON = -1;
+        public const int MONITOR_OFF = 2;
+        public const int MONITOR_STANDBY = 1;
+      }
+"@
+
+    $desktopWindow = [MonitorPower]::GetDesktopWindow()
+    $command = switch ($State) {
+      "On" { [MonitorPower]::MONITOR_ON }
+      "Off" { [MonitorPower]::MONITOR_OFF }
+      "Standby" { [MonitorPower]::MONITOR_STANDBY }
+    }
+
+    $result = [MonitorPower]::SendMessage($desktopWindow, [MonitorPower]::WM_SYSCOMMAND, [MonitorPower]::SC_MONITORPOWER, [IntPtr]$command)
+    
+    if ($result -eq 0) {
+      Write-Message -LogMessage "Monitor power set to $State." -Type "Info"
+    } else {
+      Write-Message -LogMessage "Failed to set monitor power to $State." -Type "Warning"
+    }
+  } catch {
+    Write-Message -LogMessage "Error controlling monitor power: $($_.Exception.Message)" -Type "Critical"
+  }
+}
+
+
+function Get-MonitorInfo {
+  <#
+    .SYNOPSIS
+    Gets information about all connected monitors.
+    .DESCRIPTION
+    Lists all connected monitors with their capabilities and current settings.
+    .OUTPUTS
+    [PSCustomObject] containing monitor information.
+  #>
+
+  [OutputType([PSCustomObject])]
+  [CmdletBinding()]
+  param()
+
+  try {
+    $monitors = @()
+    
+    # Get WMI monitor information
+    $wmiMonitors = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue
+    $wmiMethods = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue
+    
+    # Get display configuration
+    $displayConfig = Get-CimInstance -ClassName Win32_DisplayConfiguration -ErrorAction SilentlyContinue
+    
+    for ($i = 0; $i -lt $wmiMonitors.Count; $i++) {
+      $monitor = $wmiMonitors[$i]
+      $method = if ($wmiMethods -and $i -lt $wmiMethods.Count) { $wmiMethods[$i] } else { $null }
+      
+      $monitorInfo = @{
+        Index = $i
+        InstanceName = $monitor.InstanceName
+        CurrentBrightness = $monitor.CurrentBrightness
+        Level = $monitor.Level
+        BrightnessControlSupported = $null -ne $method
+        DeviceName = if ($displayConfig -and $i -lt $displayConfig.Count) { $displayConfig[$i].DeviceName } else { "Unknown" }
+        PixelsPerXLogicalInch = if ($displayConfig -and $i -lt $displayConfig.Count) { $displayConfig[$i].PixelsPerXLogicalInch } else { 0 }
+        PixelsPerYLogicalInch = if ($displayConfig -and $i -lt $displayConfig.Count) { $displayConfig[$i].PixelsPerYLogicalInch } else { 0 }
+      }
+      
+      $monitors += [PSCustomObject]$monitorInfo
+    }
+    
+    return $monitors
+  } catch {
+    Write-Message -LogMessage "Error getting monitor information: $($_.Exception.Message)" -Type "Warning"
+    return @()
+  }
+}
+
+
+function Set-EnergyEfficiencyMode {
+  <#
+    .SYNOPSIS
+    Sets various energy efficiency modes when user is inactive.
+    .DESCRIPTION
+    Applies multiple energy-saving measures including brightness, monitor power,
+    and system power settings to maximize energy efficiency.
+    .PARAMETER Mode
+    Energy efficiency mode: "Normal", "Dim", "Sleep", or "Off".
+    .OUTPUTS
+    None
+  #>
+
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("Normal", "Dim", "Sleep", "Off")]
+    [string]$Mode
+  )
+
+  try {
+    switch ($Mode) {
+      "Normal" {
+        # Restore normal settings
+        if ($script:Config.BrightnessFlag) {
+          Set-ScreenBrightness -Level $script:Config.BrightnessInitial -SmoothTransition:$script:Config.BrightnessSmoothTransition
+        }
+        Set-MonitorPower -State "On"
+        Write-Message -LogMessage "Energy efficiency mode set to Normal." -Type "Info"
+      }
+      
+      "Dim" {
+        # Dim screens but keep them on
+        if ($script:Config.BrightnessFlag) {
+          Set-ScreenBrightness -Level $script:Config.BrightnessMin -SmoothTransition:$script:Config.BrightnessSmoothTransition
+        }
+        Write-Message -LogMessage "Energy efficiency mode set to Dim." -Type "Info"
+      }
+      
+      "Sleep" {
+        # Put monitors to sleep
+        Set-MonitorPower -State "Standby"
+        Write-Message -LogMessage "Energy efficiency mode set to Sleep." -Type "Info"
+      }
+      
+      "Off" {
+        # Turn off monitors completely
+        Set-MonitorPower -State "Off"
+        Write-Message -LogMessage "Energy efficiency mode set to Off." -Type "Info"
+      }
+    }
+  } catch {
+    Write-Message -LogMessage "Error setting energy efficiency mode: $($_.Exception.Message)" -Type "Critical"
   }
 }
