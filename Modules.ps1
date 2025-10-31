@@ -1661,9 +1661,10 @@ function Send-KeyPress {
     .SYNOPSIS
     Press a specified key in PowerShell.
     .DESCRIPTION
-    Simulates pressing a specific key using .NET methods.
+    Simulates pressing a specific key using .NET methods. Supports F1-F12 and common keys.
+    Note: F13-F24 are not supported by SendKeys and will be silently ignored.
     .PARAMETER Key
-    The key value to be pressed (e.g., 'A', 'Enter', 'F1').
+    The key value to be pressed (e.g., '{F1}', 'A', '{ENTER}', '{NUMLOCK}').
     .OUTPUTS
     None
   #>
@@ -1674,17 +1675,42 @@ function Send-KeyPress {
     [string]$Key
   )
 
+  # Validate key is not empty
+  if ([string]::IsNullOrWhiteSpace($Key)) {
+    Write-Message -LogMessage "Key argument is empty or null." -Type "Warning"
+    return
+  }
+
   try {
-    # Load the necessary assembly
-    Add-Type -AssemblyName System.Windows.Forms
+    # Load assembly only once (cache check using script-scoped variable)
+    if (-not $script:WindowsFormsLoaded) {
+      Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+      $script:WindowsFormsLoaded = $true
+    }
+
+    # Check for unsupported F13-F24 keys
+    $fMatch = [regex]::Match($Key, '^\{F(\d{1,2})\}$')
+    if ($fMatch.Success) {
+      $fn = [int]$fMatch.Groups[1].Value
+      if ($fn -ge 13 -and $fn -le 24) {
+        Write-Message -LogMessage "Key '$Key' (F$fn) is not supported by SendKeys. Only F1-F12 are supported. Skipping." -Type "Warning"
+        return
+      }
+    }
 
     # Log the event
     Write-Message -LogMessage "The key '$Key' is going to be pressed." -Type "Info"
 
+    # Flush any pending keystrokes for reliability
+    [System.Windows.Forms.SendKeys]::Flush()
+
     # Send the key
     [System.Windows.Forms.SendKeys]::SendWait($Key)
+
+  } catch [System.Reflection.ReflectionTypeLoadException] {
+    Write-Message -LogMessage "Failed to load System.Windows.Forms assembly: $($_.Exception.Message)" -Type "Critical"
   } catch {
-    Write-Message -LogMessage "Error sending key: $_" -Type "Critical"
+    Write-Message -LogMessage "Error sending key '$Key': $($_.Exception.Message)" -Type "Critical"
   }
 }
 

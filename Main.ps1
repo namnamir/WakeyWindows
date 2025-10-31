@@ -1,11 +1,11 @@
 param(
-    [string]$Method,            # e.g. "Send-KeyPress"
-    [string]$Arg,               # e.g. "{NUMLOCK}"
-    [switch]$IgnoreBrightness,  # Pass -IgnoreBrightness to disable brightness changes
-    [switch]$IgnoreWorkingHours, # Pass -IgnoreWorkingHours to bypass time restrictions
-    [switch]$IgnoreHolidays,    # Pass -IgnoreHolidays to bypass holiday restrictions
-    [switch]$ForceRun,          # Pass -ForceRun to bypass ALL restrictions (time, holidays, etc.)
-    [switch]$Help               # Pass -Help to show help information
+  [string]$Method,             # e.g. "Send-KeyPress"
+  [string]$Arg,                # e.g. "{NUMLOCK}"
+  [switch]$IgnoreBrightness,   # Pass -IgnoreBrightness to disable brightness changes
+  [switch]$IgnoreWorkingHours, # Pass -IgnoreWorkingHours to bypass time restrictions
+  [switch]$IgnoreHolidays,     # Pass -IgnoreHolidays to bypass holiday restrictions
+  [switch]$ForceRun,           # Pass -ForceRun to bypass ALL restrictions (time, holidays, etc.)
+  [switch]$Help                # Pass -Help to show help information
 )
 
 # Show help if requested
@@ -37,7 +37,13 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
 $CurrentTime = Get-Date
 
 # Check working hours and bypass options
-$workingHoursStatus = Test-WorkingHours -CurrentTime $CurrentTime -IgnoreWorkingHours $IgnoreWorkingHours -IgnoreHolidays $IgnoreHolidays -ForceRun $ForceRun
+$workingHoursStatusArgs = @{
+    CurrentTime = $CurrentTime
+}
+if ($IgnoreWorkingHours) { $workingHoursStatusArgs.IgnoreWorkingHours = $true }
+if ($IgnoreHolidays)     { $workingHoursStatusArgs.IgnoreHolidays     = $true }
+if ($ForceRun)           { $workingHoursStatusArgs.ForceRun           = $true }
+$workingHoursStatus = Test-WorkingHours @workingHoursStatusArgs
 
 # Display working hours status
 foreach ($message in $workingHoursStatus.Messages) {
@@ -99,9 +105,6 @@ while ($true) {
   try {
     # Set the maximum wait time based on power status
     Set-TimeWaitMax-FromPowerStatu
-
-    # Load configurations for the current iteration as they might change
-    . .\Config.ps1
     
     # Apply command line brightness override after config reload
     if ($IgnoreBrightness) {
