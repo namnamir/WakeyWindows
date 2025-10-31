@@ -21,6 +21,10 @@ $script:Config = @{
 
   # Logging flag
   LogFlag = $true
+  LogVerbosity = 4  # 0=Silent, 1=Errors only, 2=Warnings+, 3=Info+, 4=Debug/Verbose
+  LogTimestampFormat = "yyyy-MM-dd HH:mm:ss"
+  LogWriteToConsole = $true
+  LogWriteToFile = $true
   TranscriptFlag = $true
   TranscriptFileLocation = ".\Logs\Transcript_$((Get-Date).ToString('yyyyMMdd')).log"
   LogFileLocation = ".\Logs\Activity_$((Get-Date).ToString('yyyyMMdd')).log"

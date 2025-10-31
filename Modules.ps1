@@ -4,12 +4,21 @@
     Log a message in PowerShell.
     .DESCRIPTION
     Logs a message along with the current date and time, using ANSI escape codes for color (configurable).
+    Supports verbosity levels for filtering and can output as plain console messages (non-log).
     .PARAMETER LogMessage
     The message to be logged.
     .PARAMETER Type
     The type of the message (e.g., "Info", "Warning", "Critical") to be logged. Defaults to "Info".
+    Type is independent of Level - it's just semantic meaning for display.
     .PARAMETER NoColor
     A switch parameter to disable color coding in the message.
+    .PARAMETER Level
+    Verbosity level (1-4) for filtering - independent of Type.
+    1=Most important, 2=Important, 3=Normal, 4=Debug/Verbose
+    Message shows if Level <= LogVerbosity threshold. Defaults to 3.
+    .PARAMETER AsLog
+    When false, treat as a plain console message (no timestamp/type, not written to file).
+    Defaults to true (full log format).
     .OUTPUTS
     None
   #>
@@ -24,42 +33,75 @@
     [string]$Type = "Info",
 
     [Parameter(Mandatory = $false)]
-    [switch]$NoColor
+    [switch]$NoColor,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1,4)]
+    [int]$Level = 3,
+
+    [Parameter(Mandatory = $false)]
+    [bool]$AsLog = $true
   )
 
-  # Check if logging is enabled
-  if ($script:Config.LogFlag) {
-    # Format the message with a timestamp and type
-    $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    # Define icons based on the type
-    $TypeIcon = switch ($Type) {
+  # Non-log console message: no timestamp/type and not written to file
+  if (-not $AsLog) {
+    Write-Host $LogMessage
+    return
+  }
+
+  # Logging disabled entirely
+  if (-not $script:Config.LogFlag) { return }
+
+  # Enforce verbosity threshold: Message shows if Level <= LogVerbosity
+  # Type (Info/Warning/Error/Critical) is separate - just semantic meaning for display
+  # Level (1-4) is for filtering - assigned per message independently
+  $threshold = if ($null -ne $script:Config.LogVerbosity) { [int]$script:Config.LogVerbosity } else { 3 }
+  if ($Level -gt $threshold) { return }
+
+  # Resolve formatting configuration
+  $tsFormat = if ($script:Config.LogTimestampFormat) { $script:Config.LogTimestampFormat } else { "yyyy-MM-dd HH:mm:ss" }
+
+  # Map type to icon and short label
+  $TypeIcon = switch ($Type) {
     "Info"     { "ℹ️" }
     "Warning"  { "⚠️" }
     "Error"    { "❗" }
     "Critical" { "📛" }
-    Default    { "✅" }
-    }
-    $FormattedMessage = "[$Timestamp] $TypeIcon [$($Type.PadRight(8))] $LogMessage"
+    Default     { "✅" }
+  }
+  $TypeShort = switch ($Type) {
+    "Info"     { "INFO" }
+    "Warning"  { "WARN" }
+    "Error"    { "ERRS" }
+    "Critical" { "CRIT" }
+    Default     { "INFO" }
+  }
+  $Timestamp = Get-Date -Format $tsFormat
+  $FormattedMessage = "[$Timestamp] $TypeIcon [$TypeShort] $LogMessage"
 
-    # Write the message to the console
-    switch ($Type) {
-      "Info"     { Write-Host $FormattedMessage -ForegroundColor Green }
-      "Warning"  { Write-Host $FormattedMessage -ForegroundColor Yellow }
-      "Error"    { Write-Host $FormattedMessage -ForegroundColor Red }
-      "Critical" { Write-Host $FormattedMessage -ForegroundColor Magenta }
+  # Console output (optional)
+  if ($script:Config.LogWriteToConsole) {
+    $fg = switch ($Type) {
+      "Info"     { 'Green' }
+      "Warning"  { 'Yellow' }
+      "Error"    { 'Red' }
+      "Critical" { 'Magenta' }
+      default     { 'White' }
     }
+    if ($NoColor) { $fg = 'White' }
+    Write-Host $FormattedMessage -ForegroundColor $fg
+  }
 
-    # Write the message to the log file if logging is enabled
-    if ($script:Config.LogFileLocation) {
-      try {
-        $logDir = Split-Path $script:Config.LogFileLocation
-        if (-not (Test-Path $logDir)) {
-            New-Item -Path $logDir -ItemType Directory -Force | Out-Null
-        }
-        Add-Content -Path $script:Config.LogFileLocation -Value $FormattedMessage
-      } catch {
-        Write-Host "Failed to write to log file: $($_.Exception.Message)" -ForegroundColor Red
+  # File output (optional)
+  if ($script:Config.LogWriteToFile -and $script:Config.LogFileLocation) {
+    try {
+      $logDir = Split-Path $script:Config.LogFileLocation
+      if (-not (Test-Path $logDir)) {
+        New-Item -Path $logDir -ItemType Directory -Force | Out-Null
       }
+      Add-Content -Path $script:Config.LogFileLocation -Value $FormattedMessage
+    } catch {
+      Write-Host "Failed to write to log file: $($_.Exception.Message)" -ForegroundColor Red
     }
   }
 }
@@ -1765,8 +1807,8 @@ namespace Win32 {
         # Calculate virtual key code (F1 = 0x70, F2 = 0x71, ..., F16 = 0x7F)
         $vk = [ushort](0x70 + ($fn - 1))
         
-        # Log the event
-        Write-Message -LogMessage "The key '$Key' (F$fn) is going to be pressed using Win32 API." -Type "Info"
+    # Log the event
+    Write-Message -LogMessage "The key '$Key' (F$fn) is going to be pressed using Win32 API." -Type "Info" -Level 2
         
         # Send using Win32 SendInput
         [Win32.KeyboardInput]::SendVirtualKey($vk)
@@ -1775,7 +1817,7 @@ namespace Win32 {
     }
 
     # Log the event
-    Write-Message -LogMessage "The key '$Key' is going to be pressed." -Type "Info"
+    Write-Message -LogMessage "The key '$Key' is going to be pressed." -Type "Info" -Level 2
 
     # Flush any pending keystrokes for reliability
     [System.Windows.Forms.SendKeys]::Flush()
