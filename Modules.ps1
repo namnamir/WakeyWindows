@@ -1525,13 +1525,27 @@ function Show-ScriptHelp {
   Write-Host ("=" * 70) -ForegroundColor Cyan
   
   Write-Host "`n📋 PARAMETERS:" -ForegroundColor Yellow
+  $defaultMethod = if ($script:Config -and $script:Config.KeepAliveMethod) { $script:Config.KeepAliveMethod } else { "Send-KeyPress" }
   Write-Host "  -Method <string>           : Keep-alive method (Send-KeyPress, Start-AppSession, etc.)" -ForegroundColor White
+  Write-Host "                            Default: $defaultMethod" -ForegroundColor Gray
   Write-Host "  -Arg <string>              : Argument for the method (e.g., F16, Notepad)" -ForegroundColor White
+  $defaultKey = if ($script:Config -and $script:Config.Key) { $script:Config.Key } else { "random from config" }
+  Write-Host "                            Default: $defaultKey" -ForegroundColor Gray
   Write-Host "  -IgnoreBrightness          : Disable brightness control" -ForegroundColor White
+  $brightnessDefault = if ($script:Config -and $script:Config.BrightnessFlag) { "enabled" } else { "disabled" }
+  Write-Host "                            Default: $brightnessDefault" -ForegroundColor Gray
   Write-Host "  -IgnoreWorkingHours        : Bypass time restrictions" -ForegroundColor White
+  if ($script:Config -and $script:Config.TimeStart -and $script:Config.TimeEnd) {
+    Write-Host "                            Default: $($script:Config.TimeStart.ToString('HH:mm'))-$($script:Config.TimeEnd.ToString('HH:mm'))" -ForegroundColor Gray
+  }
   Write-Host "  -IgnoreHolidays            : Bypass holiday restrictions" -ForegroundColor White
+  if ($script:Config -and $script:Config.CountryCode) {
+    Write-Host "                            Default: enabled, country: $($script:Config.CountryCode)" -ForegroundColor Gray
+  }
   Write-Host "  -ForceRun                  : Bypass ALL restrictions" -ForegroundColor White
   Write-Host "  -LogVerbosity <0-4>        : 0=Silent, 1=Errors, 2=Warnings+, 3=Info+, 4=Debug" -ForegroundColor White
+  $defaultVerbosity = if ($script:Config -and $script:Config.LogVerbosity) { $script:Config.LogVerbosity } else { 4 }
+  Write-Host "                            Default: $defaultVerbosity" -ForegroundColor Gray
   
   Write-Host "`n🔧 EXAMPLES:" -ForegroundColor Yellow
   Write-Host "  .\Main.ps1 -Method Send-KeyPress -Arg F16" -ForegroundColor Green

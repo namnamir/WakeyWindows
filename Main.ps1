@@ -131,24 +131,8 @@ if (-not $workingHoursStatus.ShouldRun) {
     Write-Message -LogMessage "Next scheduled run: $($workingHoursStatus.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Type "Info"
   }
   
-  # Add helpful hints (non-log informational output)
-  Write-Message -LogMessage "💡 You can override behavior with these arguments:" -AsLog:$false
-  $defaultMethod = if ($script:Config.KeepAliveMethod) { $script:Config.KeepAliveMethod } else { "Send-KeyPress" }
-  Write-Message -LogMessage "      -Method <method>    Methods: Send-KeyPress, Start-AppSession, Start-EdgeSession, Invoke-CMDlet, Move-MouseRandom, Random" -AsLog:$false
-  Write-Message -LogMessage "                          Default: $defaultMethod" -AsLog:$false
-  Write-Message -LogMessage "      -Arg <value>        e.g., F16 or {F16} (auto-wrapped if missing braces)" -AsLog:$false
-  $defaultKey = if ($script:Config.Key) { $script:Config.Key } else { "random from config" }
-  Write-Message -LogMessage "                          Default: $defaultKey" -AsLog:$false
-  Write-Message -LogMessage "      -IgnoreBrightness   Disable brightness control (default: enabled)" -AsLog:$false
-  Write-Message -LogMessage "      -IgnoreWorkingHours Bypass time restrictions (default: $($script:Config.TimeStart.ToString('HH:mm'))-$($script:Config.TimeEnd.ToString('HH:mm')))" -AsLog:$false
-  Write-Message -LogMessage "      -IgnoreHolidays     Bypass holiday restrictions (default: enabled, country: $($script:Config.CountryCode))" -AsLog:$false
-  Write-Message -LogMessage "      -ForceRun           Bypass ALL restrictions" -AsLog:$false
-  $defaultVerbosity = if ($script:Config.LogVerbosity) { $script:Config.LogVerbosity } else { 4 }
-  Write-Message -LogMessage "      -LogVerbosity <0-4>  0=Silent, 1=Errors, 2=Warnings+, 3=Info+, 4=Debug (default: $defaultVerbosity)" -AsLog:$false
-  Write-Message -LogMessage "📖 More help: Get-Help .\Main.ps1 -Full" -AsLog:$false
-  Write-Message -LogMessage "🔧 Examples:" -AsLog:$false
-  Write-Message -LogMessage "      .\Main.ps1 -Method Send-KeyPress -Arg F16 -ForceRun" -AsLog:$false
-  Write-Message -LogMessage "      .\Main.ps1 -Method Send-KeyPress -Arg F16 -IgnoreBrightness -LogVerbosity 2" -AsLog:$false
+  # Show comprehensive help using Show-ScriptHelp function
+  Show-ScriptHelp
   
   exit 0
 }
