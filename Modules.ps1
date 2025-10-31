@@ -1522,7 +1522,7 @@ function Show-ScriptHelp {
   param()
 
   Write-Host "`n🚀 WakeyWindows - Keep Your PC Awake Script" -ForegroundColor Cyan
-  Write-Host "=" * 50 -ForegroundColor Cyan
+  Write-Host ("=" * 70) -ForegroundColor Cyan
   
   Write-Host "`n📋 PARAMETERS:" -ForegroundColor Yellow
   Write-Host "  -Method <string>           : Keep-alive method (Send-KeyPress, Start-AppSession, etc.)" -ForegroundColor White
@@ -1531,6 +1531,7 @@ function Show-ScriptHelp {
   Write-Host "  -IgnoreWorkingHours        : Bypass time restrictions" -ForegroundColor White
   Write-Host "  -IgnoreHolidays            : Bypass holiday restrictions" -ForegroundColor White
   Write-Host "  -ForceRun                  : Bypass ALL restrictions" -ForegroundColor White
+  Write-Host "  -LogVerbosity <0-4>        : 0=Silent, 1=Errors, 2=Warnings+, 3=Info+, 4=Debug" -ForegroundColor White
   
   Write-Host "`n🔧 EXAMPLES:" -ForegroundColor Yellow
   Write-Host "  .\Main.ps1 -Method Send-KeyPress -Arg F16" -ForegroundColor Green
@@ -1552,8 +1553,8 @@ function Show-ScriptHelp {
   Write-Host "  • Send-KeyPress is most energy efficient" -ForegroundColor White
   Write-Host "  • Check Config.ps1 for customization options" -ForegroundColor White
   
-  Write-Host "`n📖 For detailed help: Get-Help .\Main.ps1 -Full" -ForegroundColor Cyan
-  Write-Host "=" * 50 -ForegroundColor Cyan
+  Write-Host ("=" * 70) -ForegroundColor Cyan
+  Write-Host ""
 }
 
 

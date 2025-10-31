@@ -1,3 +1,76 @@
+<#
+.SYNOPSIS
+  Keep your Windows PC awake and prevent it from sleeping or going idle.
+
+.DESCRIPTION
+  WakeyWindows prevents your PC from sleeping or entering idle state by simulating user activity.
+  It supports multiple keep-alive methods and respects working hours and holidays.
+
+.PARAMETER Method
+  Keep-alive method to use. Options:
+  - Send-KeyPress: Press a key (most energy efficient)
+  - Start-AppSession: Open/close applications
+  - Start-EdgeSession: Open/close web pages
+  - Invoke-CMDlet: Run PowerShell commands
+  - Move-MouseRandom: Move mouse cursor
+  - Random: Randomly choose method
+  Default: Send-KeyPress (from Config.ps1)
+
+.PARAMETER Arg
+  Argument for the specified method:
+  - For Send-KeyPress: Key to press (e.g., F16, {F16}, {NUMLOCK})
+  - For Start-AppSession: Application name (e.g., Notepad)
+  - For Start-EdgeSession: Webpage URL
+  - For Invoke-CMDlet: PowerShell command as string
+  Auto-wrapped with braces if missing for keys.
+
+.PARAMETER IgnoreBrightness
+  Disable brightness control. Default: enabled (brightness controlled based on activity).
+
+.PARAMETER IgnoreWorkingHours
+  Bypass time restrictions. Default: respects working hours (08:30-17:00 from Config.ps1).
+
+.PARAMETER IgnoreHolidays
+  Bypass holiday restrictions. Default: enabled, country: NL (from Config.ps1).
+
+.PARAMETER ForceRun
+  Bypass ALL restrictions (time, holidays, etc.). Overrides other bypass options.
+
+.PARAMETER LogVerbosity
+  Verbosity level for logging (0-4). Default: 4
+  - 0: Silent (no logs)
+  - 1: Errors only (Critical/Error messages)
+  - 2: Warnings and Important Info (Level 1-2)
+  - 3: All Info messages (Level 1-3)
+  - 4: Debug/Verbose (all messages, Level 1-4)
+
+.PARAMETER Help
+  Display detailed help information using Show-ScriptHelp function.
+
+.EXAMPLE
+  .\Main.ps1 -Method Send-KeyPress -Arg F16
+  
+  Press F16 key periodically to keep PC awake during working hours.
+
+.EXAMPLE
+  .\Main.ps1 -Method Send-KeyPress -Arg F16 -ForceRun -LogVerbosity 2
+  
+  Press F16 key, bypass all restrictions, and show only warnings and important info.
+
+.EXAMPLE
+  .\Main.ps1 -Method Start-AppSession -Arg Notepad -IgnoreBrightness
+  
+  Open/close Notepad periodically, with brightness control disabled.
+
+.NOTES
+  - Working hours, holidays, and other defaults are configured in Config.ps1
+  - The script will automatically stop outside working hours unless bypassed
+  - For formatted help output, use: .\Main.ps1 -Help
+
+.LINK
+  Config.ps1
+#>
+
 param(
   [string]$Method,             # e.g. "Send-KeyPress"
   [string]$Arg,                # e.g. "{NUMLOCK}"
@@ -5,6 +78,7 @@ param(
   [switch]$IgnoreWorkingHours, # Pass -IgnoreWorkingHours to bypass time restrictions
   [switch]$IgnoreHolidays,     # Pass -IgnoreHolidays to bypass holiday restrictions
   [switch]$ForceRun,           # Pass -ForceRun to bypass ALL restrictions (time, holidays, etc.)
+  [int]$LogVerbosity,          # 0=Silent, 1=Errors only, 2=Warnings+, 3=Info+, 4=Debug/Verbose
   [switch]$Help                # Pass -Help to show help information
 )
 
@@ -58,13 +132,23 @@ if (-not $workingHoursStatus.ShouldRun) {
   }
   
   # Add helpful hints (non-log informational output)
-  Write-Message -LogMessage "💡 Need to run outside working hours? Try these options:" -AsLog:$false
-  Write-Message -LogMessage "   -IgnoreWorkingHours  : Bypass time restrictions" -AsLog:$false
-  Write-Message -LogMessage "   -IgnoreHolidays      : Bypass holiday restrictions" -AsLog:$false
-  Write-Message -LogMessage "   -ForceRun            : Bypass ALL restrictions" -AsLog:$false
-  Write-Message -LogMessage "   -IgnoreBrightness    : Disable brightness control" -AsLog:$false
-  Write-Message -LogMessage "📖 For more help: Get-Help .\Main.ps1 -Full" -AsLog:$false
-  Write-Message -LogMessage "🔧 Example: .\Main.ps1 -Method Send-KeyPress -Arg F16 -ForceRun" -AsLog:$false
+  Write-Message -LogMessage "💡 You can override behavior with these arguments:" -AsLog:$false
+  $defaultMethod = if ($script:Config.KeepAliveMethod) { $script:Config.KeepAliveMethod } else { "Send-KeyPress" }
+  Write-Message -LogMessage "      -Method <method>    Methods: Send-KeyPress, Start-AppSession, Start-EdgeSession, Invoke-CMDlet, Move-MouseRandom, Random" -AsLog:$false
+  Write-Message -LogMessage "                          Default: $defaultMethod" -AsLog:$false
+  Write-Message -LogMessage "      -Arg <value>        e.g., F16 or {F16} (auto-wrapped if missing braces)" -AsLog:$false
+  $defaultKey = if ($script:Config.Key) { $script:Config.Key } else { "random from config" }
+  Write-Message -LogMessage "                          Default: $defaultKey" -AsLog:$false
+  Write-Message -LogMessage "      -IgnoreBrightness   Disable brightness control (default: enabled)" -AsLog:$false
+  Write-Message -LogMessage "      -IgnoreWorkingHours Bypass time restrictions (default: $($script:Config.TimeStart.ToString('HH:mm'))-$($script:Config.TimeEnd.ToString('HH:mm')))" -AsLog:$false
+  Write-Message -LogMessage "      -IgnoreHolidays     Bypass holiday restrictions (default: enabled, country: $($script:Config.CountryCode))" -AsLog:$false
+  Write-Message -LogMessage "      -ForceRun           Bypass ALL restrictions" -AsLog:$false
+  $defaultVerbosity = if ($script:Config.LogVerbosity) { $script:Config.LogVerbosity } else { 4 }
+  Write-Message -LogMessage "      -LogVerbosity <0-4>  0=Silent, 1=Errors, 2=Warnings+, 3=Info+, 4=Debug (default: $defaultVerbosity)" -AsLog:$false
+  Write-Message -LogMessage "📖 More help: Get-Help .\Main.ps1 -Full" -AsLog:$false
+  Write-Message -LogMessage "🔧 Examples:" -AsLog:$false
+  Write-Message -LogMessage "      .\Main.ps1 -Method Send-KeyPress -Arg F16 -ForceRun" -AsLog:$false
+  Write-Message -LogMessage "      .\Main.ps1 -Method Send-KeyPress -Arg F16 -IgnoreBrightness -LogVerbosity 2" -AsLog:$false
   
   exit 0
 }
@@ -110,6 +194,13 @@ while ($true) {
     if ($IgnoreBrightness) {
       $script:Config.BrightnessFlag = $false
       Write-Message -LogMessage "Brightness changes disabled via command line switch" -Type "Info" -Level 2
+    }
+
+    # Apply command line log verbosity override (0-4)
+    if ($PSBoundParameters.ContainsKey('LogVerbosity')) {
+      $newVerbosity = [Math]::Max(0, [Math]::Min(4, [int]$LogVerbosity))
+      $script:Config.LogVerbosity = $newVerbosity
+      Write-Message -LogMessage "Log verbosity set to $newVerbosity (0=Silent, 1=Errors, 2=Warnings+, 3=Info+, 4=Debug)" -Type "Info" -Level 2
     }
 
     # Check if the user is active; if so, wait until they are inactive
