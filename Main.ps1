@@ -104,7 +104,7 @@ if ($script:Config.TranscriptStarted) {
 while ($true) {
   try {
     # Set the maximum wait time based on power status
-    Set-TimeWaitMax-FromPowerStatu
+    Set-TimeWaitMax-FromPowerStatus
     
     # Apply command line brightness override after config reload
     if ($IgnoreBrightness) {

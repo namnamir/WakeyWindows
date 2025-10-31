@@ -134,7 +134,7 @@ function Get-SleepTimeout {
 }
 
 
-function Set-TimeWaitMax-FromPowerStatu {
+function Set-TimeWaitMax-FromPowerStatus {
   <#
     .SYNOPSIS
     Sets the global TimeWaitMax variable based on current power status, but only if there is a change.
@@ -170,7 +170,11 @@ function Set-TimeWaitMax-FromPowerStatu {
   # Only update if type or timeout has changed
   if ($type -ne $script:LastPowerType -or $timeout -ne $script:LastTimeout) {
     if ($timeout -and $timeout -gt 0) {
-      $script:Config.TimeWaitMax = $timeout - 5
+      # Use the minimum of system timeout (minus 5s safety margin) and Config value
+      # This ensures we respect user's desired max wait time while still preventing sleep
+      $systemMax = $timeout - 5
+      $configMax = $script:Config.TimeWaitMax
+      $script:Config.TimeWaitMax = [Math]::Min($systemMax, $configMax)
       Write-Message -LogMessage "TimeWaitMax set to $($script:Config.TimeWaitMax) seconds ($source)." -Type "Info"
 
       # Update last known values
