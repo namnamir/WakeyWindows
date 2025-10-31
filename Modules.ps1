@@ -1661,10 +1661,10 @@ function Send-KeyPress {
     .SYNOPSIS
     Press a specified key in PowerShell.
     .DESCRIPTION
-    Simulates pressing a specific key using .NET methods. Supports F1-F12 and common keys.
-    Note: F13-F24 are not supported by SendKeys and will be silently ignored.
+    Simulates pressing a specific key using .NET methods. Supports F1-F12 (via SendKeys) and F13-F24 (via Win32 SendInput API).
+    Common keys like NUMLOCK, CAPSLOCK, and special keys are also supported.
     .PARAMETER Key
-    The key value to be pressed (e.g., '{F1}', 'A', '{ENTER}', '{NUMLOCK}').
+    The key value to be pressed (e.g., '{F1}', '{F16}', 'A', '{ENTER}', '{NUMLOCK}').
     .OUTPUTS
     None
   #>
@@ -1688,12 +1688,88 @@ function Send-KeyPress {
       $script:WindowsFormsLoaded = $true
     }
 
-    # Check for unsupported F13-F24 keys
+    # Handle extended function keys (F13-F24) using Win32 SendInput API
+    # SendKeys only supports F1-F12, so we need Win32 API for F13-F24
     $fMatch = [regex]::Match($Key, '^\{F(\d{1,2})\}$')
     if ($fMatch.Success) {
       $fn = [int]$fMatch.Groups[1].Value
       if ($fn -ge 13 -and $fn -le 24) {
-        Write-Message -LogMessage "Key '$Key' (F$fn) is not supported by SendKeys. Only F1-F12 are supported. Skipping." -Type "Warning"
+        # Lazy-load Win32 SendInput API only when needed (F13-F24)
+        if (-not ("Win32.KeyboardInput" -as [type])) {
+          Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace Win32 {
+  public static class KeyboardInput {
+    [StructLayout(LayoutKind.Sequential)]
+    struct INPUT {
+      public uint type;
+      public InputUnion U;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    struct InputUnion {
+      [FieldOffset(0)]
+      public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct KEYBDINPUT {
+      public ushort wVk;
+      public ushort wScan;
+      public uint dwFlags;
+      public uint time;
+      public IntPtr dwExtraInfo;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    const uint INPUT_KEYBOARD = 1;
+    const uint KEYEVENTF_KEYUP = 0x0002;
+
+    public static void SendVirtualKey(ushort vk) {
+      var down = new INPUT {
+        type = INPUT_KEYBOARD,
+        U = new InputUnion {
+          ki = new KEYBDINPUT {
+            wVk = vk,
+            wScan = 0,
+            dwFlags = 0,
+            time = 0,
+            dwExtraInfo = IntPtr.Zero
+          }
+        }
+      };
+      var up = new INPUT {
+        type = INPUT_KEYBOARD,
+        U = new InputUnion {
+          ki = new KEYBDINPUT {
+            wVk = vk,
+            wScan = 0,
+            dwFlags = KEYEVENTF_KEYUP,
+            time = 0,
+            dwExtraInfo = IntPtr.Zero
+          }
+        }
+      };
+      INPUT[] inputs = new INPUT[] { down, up };
+      SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+  }
+}
+"@ -ErrorAction Stop
+        }
+        
+        # Calculate virtual key code (F1 = 0x70, F2 = 0x71, ..., F16 = 0x7F)
+        $vk = [ushort](0x70 + ($fn - 1))
+        
+        # Log the event
+        Write-Message -LogMessage "The key '$Key' (F$fn) is going to be pressed using Win32 API." -Type "Info"
+        
+        # Send using Win32 SendInput
+        [Win32.KeyboardInput]::SendVirtualKey($vk)
         return
       }
     }
@@ -1704,7 +1780,7 @@ function Send-KeyPress {
     # Flush any pending keystrokes for reliability
     [System.Windows.Forms.SendKeys]::Flush()
 
-    # Send the key
+    # Send the key (F1-F12 and other keys use SendKeys)
     [System.Windows.Forms.SendKeys]::SendWait($Key)
 
   } catch [System.Reflection.ReflectionTypeLoadException] {
