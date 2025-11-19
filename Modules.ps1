@@ -1,4 +1,66 @@
-﻿function Write-Message {
+﻿function Get-Text {
+  <#
+    .SYNOPSIS
+    Retrieves a localized text string from the Texts.ps1 file.
+    .DESCRIPTION
+    Accesses the centralized text strings for easier maintenance and translation support.
+    Supports string formatting with the -f operator for parameterized messages.
+    .PARAMETER Category
+    The category of the text (e.g., "General", "KeepAlive", "Activity").
+    .PARAMETER Key
+    The key of the specific text message.
+    .PARAMETER Arguments
+    Optional arguments for string formatting (used with -f operator).
+    .OUTPUTS
+    [string] The requested text string, formatted if arguments provided.
+    .EXAMPLE
+    Get-Text -Category "General" -Key "ScriptWillNotRun" -Arguments "Outside working hours"
+    Returns: "Script will not run: Outside working hours"
+  #>
+  
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Category,
+    
+    [Parameter(Mandatory = $true)]
+    [string]$Key,
+    
+    [Parameter(Mandatory = $false)]
+    [array]$Arguments = @()
+  )
+  
+  try {
+    if (-not $script:Texts) {
+      Write-Warning "Texts.ps1 not loaded. Loading now..."
+      . .\Texts.ps1
+    }
+    
+    if (-not $script:Texts.ContainsKey($Category)) {
+      Write-Warning "Text category '$Category' not found. Returning key as-is."
+      return "[$Category.$Key]"
+    }
+    
+    if (-not $script:Texts[$Category].ContainsKey($Key)) {
+      Write-Warning "Text key '$Key' not found in category '$Category'. Returning key as-is."
+      return "[$Category.$Key]"
+    }
+    
+    $text = $script:Texts[$Category][$Key]
+    
+    # Apply formatting if arguments provided
+    if ($Arguments.Count -gt 0) {
+      return $text -f $Arguments
+    }
+    
+    return $text
+  } catch {
+    Write-Warning "Error retrieving text [$Category.$Key]: $($_.Exception.Message)"
+    return "[$Category.$Key]"
+  }
+}
+
+function Write-Message {
   <#
     .SYNOPSIS
     Log a message in PowerShell.
@@ -101,7 +163,7 @@
       }
       Add-Content -Path $script:Config.LogFileLocation -Value $FormattedMessage
     } catch {
-      Write-Host "Failed to write to log file: $($_.Exception.Message)" -ForegroundColor Red
+      Write-Host (Get-Text -Category "General" -Key "LogFileWriteFailed" -Arguments $_.Exception.Message) -ForegroundColor Red
     }
   }
 }
@@ -175,16 +237,16 @@ function Set-TimeWaitMax-FromPowerStatus {
       $systemMax = $timeout - 5
       $configMax = $script:Config.TimeWaitMax
       $script:Config.TimeWaitMax = [Math]::Min($systemMax, $configMax)
-      Write-Message -LogMessage "TimeWaitMax set to $($script:Config.TimeWaitMax) seconds ($source)." -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "System" -Key "TimeWaitMaxSet" -Arguments $script:Config.TimeWaitMax, $source) -Type "Info"
 
       # Update last known values
       $script:LastPowerType = $type
       $script:LastTimeout   = $timeout
     } else {
-      Write-Message -LogMessage "Failed to determine sleep timeout for $type power ($source)." -Type "Warning"
+      Write-Message -LogMessage (Get-Text -Category "System" -Key "SleepTimeoutFailed" -Arguments $type, $source) -Type "Warning"
     }
   } else {
-    Write-Message -LogMessage "No change in power type ($type) or timeout ($timeout); skipping update." -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "System" -Key "NoPowerChange" -Arguments $type, $timeout) -Type "Info"
   }
 }
 
@@ -337,19 +399,19 @@ function Get-ActivityStatus {
     if ($trackpadInfo.IsTrackpad) {
       $status.InputDevice = "Trackpad"
       $status.GestureType = $trackpadInfo.GestureType
-      $status.Reasons += "✅🖱️ Trackpad Moved by $([Math]::Round($totalMovement, 1)) pixels ($mouseDeltaX, $mouseDeltaY) [$($trackpadInfo.MovementPattern)]"
+      $status.Reasons += (Get-Text -Category "Activity" -Key "TrackpadMoved" -Arguments ([Math]::Round($totalMovement, 1)), $mouseDeltaX, $mouseDeltaY, $trackpadInfo.MovementPattern)
       if ($trackpadInfo.GestureType -ne "None") {
-        $status.Reasons += "✅👆🏼 Gesture: $($trackpadInfo.GestureType)"
+        $status.Reasons += (Get-Text -Category "Activity" -Key "TrackpadGesture" -Arguments $trackpadInfo.GestureType)
       }
       $activityScore += 10  # Bonus for trackpad detection
     } else {
       $status.InputDevice = "Mouse"
-      $status.Reasons += "✅🖱️ Mouse Moved by $([Math]::Round($totalMovement, 1)) pixels ($mouseDeltaX, $mouseDeltaY)"
+      $status.Reasons += (Get-Text -Category "Activity" -Key "MouseMoved" -Arguments ([Math]::Round($totalMovement, 1)), $mouseDeltaX, $mouseDeltaY)
     }
     
     $status.ActivityType = "MouseMovement"
   } else {
-    $status.Reasons += "❌🖱️ Mouse Static ($([Math]::Round($totalMovement, 1))px)"
+    $status.Reasons += (Get-Text -Category "Activity" -Key "MouseStatic" -Arguments ([Math]::Round($totalMovement, 1)))
   }
 
   # Check key press with enhanced typing analysis
@@ -360,24 +422,24 @@ function Get-ActivityStatus {
     # Check if we have typing activity data
     if ($TypingActivity -and $TypingActivity.IsTyping) {
       if ($TypingActivity.TypingPattern -eq "Continuous") {
-        $status.Reasons += "✅⌨️ User is typing continuously ($($TypingActivity.TypingSpeed) WPM)"
+        $status.Reasons += (Get-Text -Category "Activity" -Key "TypingContinuous" -Arguments $TypingActivity.TypingSpeed)
         $activityScore += 20  # Bonus for continuous typing
       } elseif ($TypingActivity.TypingPattern -eq "Fast") {
-        $status.Reasons += "✅⌨️ Fast typing detected ($($TypingActivity.TypingSpeed) WPM)"
+        $status.Reasons += (Get-Text -Category "Activity" -Key "TypingFast" -Arguments $TypingActivity.TypingSpeed)
         $activityScore += 15
       } elseif ($TypingActivity.TypingPattern -eq "Normal") {
-        $status.Reasons += "✅⌨️ Normal typing ($($TypingActivity.TypingSpeed) WPM)"
+        $status.Reasons += (Get-Text -Category "Activity" -Key "TypingNormal" -Arguments $TypingActivity.TypingSpeed)
         $activityScore += 10
       } else {
-        $status.Reasons += "✅⌨️ Key Pressed ($KeyPressed) - $($TypingActivity.TypingPattern)"
+        $status.Reasons += (Get-Text -Category "Activity" -Key "KeyPressedWithPattern" -Arguments $KeyPressed, $TypingActivity.TypingPattern)
       }
     } else {
-      $status.Reasons += "✅⌨️ Key Pressed ($KeyPressed)"
+      $status.Reasons += (Get-Text -Category "Activity" -Key "KeyPressed" -Arguments $KeyPressed)
     }
     
     if ($status.ActivityType -eq "None") { $status.ActivityType = "Keyboard" }
   } else {
-    $status.Reasons += "❌⌨️ No Keys"
+    $status.Reasons += (Get-Text -Category "Activity" -Key "NoKeys")
   }
 
   # Check mouse clicks with confidence scoring
@@ -388,35 +450,35 @@ function Get-ActivityStatus {
     # Check for trackpad gestures
     if ($TrackpadGestures.Count -gt 0) {
       $gestureText = $TrackpadGestures -join ', '
-      $status.Reasons += "✅👆🏼 Trackpad Gestures: $gestureText"
+      $status.Reasons += (Get-Text -Category "Activity" -Key "TrackpadGestures" -Arguments $gestureText)
       $activityScore += 15  # Bonus for trackpad gestures
     } else {
-      $status.Reasons += "✅👆🏼 Mouse Clicked $($MouseClicked -join ', ')"
+      $status.Reasons += (Get-Text -Category "Activity" -Key "MouseClicked" -Arguments ($MouseClicked -join ', '))
     }
     
     if ($status.ActivityType -eq "None") { $status.ActivityType = "MouseClick" }
   } else {
-    $status.Reasons += "❌👆🏼 No Clicks"
+    $status.Reasons += (Get-Text -Category "Activity" -Key "NoClicks")
   }
 
   # Check window focus changes
   if ($WindowTitle -and $LastWindowTitle -and $WindowTitle -ne $LastWindowTitle) {
     $status.IsActive = $true
     $activityScore += 25
-    $status.Reasons += "✅🪟 Window Focus Changed: '$LastWindowTitle' → '$WindowTitle'"
+    $status.Reasons += (Get-Text -Category "Activity" -Key "WindowFocusChanged" -Arguments $LastWindowTitle, $WindowTitle)
     if ($status.ActivityType -eq "None") { $status.ActivityType = "WindowFocus" }
   } else {
-    $status.Reasons += "❌🪟 Window Static"
+    $status.Reasons += (Get-Text -Category "Activity" -Key "WindowStatic")
   }
 
   # Check mouse wheel movement
   if ($MouseWheelDelta -ne 0) {
     $status.IsActive = $true
     $activityScore += 20
-    $status.Reasons += "✅🖱️ Mouse Wheel: $MouseWheelDelta"
+    $status.Reasons += (Get-Text -Category "Activity" -Key "MouseWheel" -Arguments $MouseWheelDelta)
     if ($status.ActivityType -eq "None") { $status.ActivityType = "MouseWheel" }
   } else {
-    $status.Reasons += "❌🖱️ No Wheel Movement"
+    $status.Reasons += (Get-Text -Category "Activity" -Key "NoWheelMovement")
   }
 
   # Calculate confidence based on activity score
@@ -475,97 +537,109 @@ function Test-UserActivity {
       $script:AssembliesLoaded = $true
     }
 
-    # Add the GetAsyncKeyState API if not already present
-    if (-not ("Win32.User32" -as [type])) {
-      Add-Type -MemberDefinition @"
-      [DllImport("user32.dll", SetLastError = true)]
-        public static extern short GetAsyncKeyState(int vKey);
+    # Add Win32 API definitions (structures and functions) in a single compilation unit
+    # Only load if at least one type is missing (they must be loaded together)
+    if (-not ("Win32.User32" -as [type]) -or -not ("Win32.Structures" -as [type])) {
+      try {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
 
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern short GetKeyState(int nVirtKey);
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool BlockInput([MarshalAs(UnmanagedType.Bool)] bool fBlockIt);
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern IntPtr GetForegroundWindow();
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern int GetWindowTextLength(IntPtr hWnd);
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern int GetSystemMetrics(int nIndex);
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool GetCursorInfo(ref CURSORINFO pci);
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool GetRawInputData(IntPtr hRawInput, uint uiCommand, IntPtr pData, ref uint pcbSize, uint cbSizeHeader);
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern uint GetRawInputDeviceList(IntPtr pRawInputDeviceList, ref uint puiNumDevices, uint cbSize);
-        
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern uint GetRawInputDeviceInfo(IntPtr hDevice, uint uiCommand, IntPtr pData, ref uint pcbSize);
-"@ -Name "User32" -Namespace Win32
+namespace Win32 {
+  public static class Structures {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    {
+        public int x;
+        public int y;
     }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CURSORINFO
+    {
+        public int cbSize;
+        public int flags;
+        public IntPtr hCursor;
+        public POINT ptScreenPos;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWINPUTDEVICELIST
+    {
+        public IntPtr hDevice;
+        public uint dwType;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWINPUTHEADER
+    {
+        public uint dwType;
+        public uint dwSize;
+        public IntPtr hDevice;
+        public IntPtr wParam;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWMOUSE
+    {
+        public ushort usFlags;
+        public ushort usButtonFlags;
+        public ushort usButtonData;
+        public uint ulRawButtons;
+        public int lLastX;
+        public int lLastY;
+        public uint ulExtraInformation;
+    }
+  }
+  
+  public static class User32 {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern short GetAsyncKeyState(int vKey);
 
-    # Add structures for trackpad detection
-    if (-not ("Win32.Structures" -as [type])) {
-      Add-Type -MemberDefinition @"
-      [StructLayout(LayoutKind.Sequential)]
-      public struct CURSORINFO
-      {
-          public int cbSize;
-          public int flags;
-          public IntPtr hCursor;
-          public POINT ptScreenPos;
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern short GetKeyState(int nVirtKey);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool BlockInput([MarshalAs(UnmanagedType.Bool)] bool fBlockIt);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr GetForegroundWindow();
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetWindowTextLength(IntPtr hWnd);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetSystemMetrics(int nIndex);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool GetCursorInfo(ref Structures.CURSORINFO pci);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool GetRawInputData(IntPtr hRawInput, uint uiCommand, IntPtr pData, ref uint pcbSize, uint cbSizeHeader);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint GetRawInputDeviceList(IntPtr pRawInputDeviceList, ref uint puiNumDevices, uint cbSize);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint GetRawInputDeviceInfo(IntPtr hDevice, uint uiCommand, IntPtr pData, ref uint pcbSize);
+  }
+}
+"@
+      } catch {
+        # Ignore error if types already exist (e.g., from previous script run)
+        if ($_.Exception.Message -notmatch "already exists") {
+          throw
+        }
       }
-      
-      [StructLayout(LayoutKind.Sequential)]
-      public struct POINT
-      {
-          public int x;
-          public int y;
-      }
-      
-      [StructLayout(LayoutKind.Sequential)]
-      public struct RAWINPUTDEVICELIST
-      {
-          public IntPtr hDevice;
-          public uint dwType;
-      }
-      
-      [StructLayout(LayoutKind.Sequential)]
-      public struct RAWINPUTHEADER
-      {
-          public uint dwType;
-          public uint dwSize;
-          public IntPtr hDevice;
-          public IntPtr wParam;
-      }
-      
-      [StructLayout(LayoutKind.Sequential)]
-      public struct RAWMOUSE
-      {
-          public ushort usFlags;
-          public ushort usButtonFlags;
-          public ushort usButtonData;
-          public uint ulRawButtons;
-          public int lLastX;
-          public int lLastY;
-          public uint ulExtraInformation;
-      }
-"@ -Name "Structures" -Namespace Win32
     }
 
     # Initialize the last mouse position if not already set
     if (-not $script:LastMousePosition) {
       $script:LastMousePosition = [System.Windows.Forms.Cursor]::Position
-      Write-Message -LogMessage "Enhanced user activity tracking started." -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Activity" -Key "TrackingStarted") -Type "Info"
       return $true
     }
 
@@ -771,12 +845,12 @@ function Test-UserActivity {
       $script:LastWindowTitle = $CurrentWindowTitle
 
       # Log activity with enhanced details
-      Write-Message -LogMessage "User activity detected ($($activityStatus.ActivityType)): $($activityStatus.Reasons -join ' | '). Pausing script for '$(Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $script:Config.TimeWaitMax))'." -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityDetected" -Arguments $activityStatus.ActivityType, ($activityStatus.Reasons -join ' | '), (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $script:Config.TimeWaitMax))) -Type "Info"
 
       # Reset brightness and energy efficiency if configured
       if ($script:Config.BrightnessFlag -and $script:BrightnessState -ne "Normal") {
           $script:BrightnessState = "Normal"
-          Write-Message -LogMessage "Restoring energy efficiency settings due to user activity." -Type "Info"
+          Write-Message -LogMessage (Get-Text -Category "Energy" -Key "RestoringNormal") -Type "Info"
           Set-EnergyEfficiencyMode -Mode "Normal"
       }
       return $true
@@ -790,13 +864,13 @@ function Test-UserActivity {
         $script:BrightnessState -eq "Normal"
       ) {
           $script:BrightnessState = "Dimmed"
-          Write-Message -LogMessage "Applying energy efficiency measures due to inactivity: $($activityStatus.Reasons -join ' | ')" -Type "Warning"
+          Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ApplyingMeasures" -Arguments ($activityStatus.Reasons -join ' | ')) -Type "Warning"
           Set-EnergyEfficiencyMode -Mode $script:Config.EnergyEfficiencyMode
       }
       return $false
     }
   } catch {
-    Write-Message -LogMessage "Error checking user activity: $($_.Exception.Message)" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityCheckError" -Arguments $_.Exception.Message) -Type "Critical"
     return $false
   }
   finally {
@@ -849,7 +923,7 @@ function Test-TrackpadActivity {
 
     # Skip if movement is too small
     if ($totalMovement -lt $MovementThreshold) {
-      $trackpadActivity.Reasons += "❌🖱️ Movement too small for analysis"
+      $trackpadActivity.Reasons += (Get-Text -Category "Activity" -Key "MovementTooSmall")
       return [PSCustomObject]$trackpadActivity
     }
 
@@ -874,13 +948,13 @@ function Test-TrackpadActivity {
     # Check for trackpad-like movement patterns
     if ($isLaptop) {
       $confidence += 20
-      $reasons += "✅💻 Laptop detected (likely has trackpad)"
+      $reasons += (Get-Text -Category "Activity" -Key "LaptopDetected")
     }
 
     # Check for precise movements (trackpads are more precise)
     if ($totalMovement -ge 1 -and $totalMovement -le 50) {
       $confidence += 15
-      $reasons += "✅🎯 Precise movement detected ($([Math]::Round($totalMovement, 1))px)"
+      $reasons += (Get-Text -Category "Activity" -Key "PreciseMovement" -Arguments ([Math]::Round($totalMovement, 1)))
     }
 
     # Check for diagonal movements (common with trackpads)
@@ -888,34 +962,34 @@ function Test-TrackpadActivity {
       $angle = [Math]::Atan2([Math]::Abs($deltaY), [Math]::Abs($deltaX)) * 180 / [Math]::PI
       if ($angle -gt 15 -and $angle -lt 75) {
         $confidence += 10
-        $reasons += "✅↗️ Diagonal movement detected ($([Math]::Round($angle, 1))°)"
+        $reasons += (Get-Text -Category "Activity" -Key "DiagonalMovement" -Arguments ([Math]::Round($angle, 1)))
       }
     }
 
     # Check for smooth movement patterns (trackpads have acceleration)
     if ($totalMovement -gt 5 -and $totalMovement -lt 30) {
       $confidence += 10
-      $reasons += "✅🌊 Smooth movement pattern detected"
+      $reasons += (Get-Text -Category "Activity" -Key "SmoothMovement")
     }
 
     # Check for scrolling-like vertical movement
     if ([Math]::Abs($deltaY) -gt [Math]::Abs($deltaX) * 2) {
       $confidence += 15
-      $reasons += "✅📜 Vertical scrolling gesture detected"
+      $reasons += (Get-Text -Category "Activity" -Key "VerticalScrolling")
       $trackpadActivity.GestureType = "Scroll"
     }
 
     # Check for horizontal swiping
     if ([Math]::Abs($deltaX) -gt [Math]::Abs($deltaY) * 2) {
       $confidence += 10
-      $reasons += "✅👈 Horizontal swipe gesture detected"
+      $reasons += (Get-Text -Category "Activity" -Key "HorizontalSwipe")
       $trackpadActivity.GestureType = "Swipe"
     }
 
     # Check for small circular movements (common with trackpads)
     if ($totalMovement -gt 3 -and $totalMovement -lt 15) {
       $confidence += 5
-      $reasons += "✅🔄 Small circular movement detected"
+      $reasons += (Get-Text -Category "Activity" -Key "SmallCircular")
     }
 
     # Determine movement pattern
@@ -933,18 +1007,18 @@ function Test-TrackpadActivity {
     $trackpadActivity.Reasons = $reasons
 
     if (-not $trackpadActivity.IsTrackpad) {
-      $trackpadActivity.Reasons += "❌🖱️ Movement pattern suggests traditional mouse"
+      $trackpadActivity.Reasons += (Get-Text -Category "Activity" -Key "MovementPatternMouse")
     }
 
     return [PSCustomObject]$trackpadActivity
   } catch {
-    Write-Message -LogMessage "Error detecting trackpad activity: $($_.Exception.Message)" -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "TrackpadActivityError" -Arguments $_.Exception.Message) -Type "Warning"
     return [PSCustomObject]@{
       IsTrackpad = $false
       GestureType = "None"
       Confidence = 0
       MovementPattern = "Unknown"
-      Reasons = @("Trackpad detection failed")
+      Reasons = @((Get-Text -Category "Activity" -Key "TrackpadDetectionFailed"))
     }
   }
 }
@@ -1026,7 +1100,7 @@ function Get-SystemActivityMetrics {
 
     return [PSCustomObject]$metrics
   } catch {
-    Write-Message -LogMessage "Error getting system activity metrics: $($_.Exception.Message)" -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "SystemMetricsError" -Arguments $_.Exception.Message) -Type "Warning"
     return [PSCustomObject]@{
       CpuUsage = 0
       MemoryUsage = 0
@@ -1054,7 +1128,7 @@ function Stop-ActivityDetection {
   param()
 
   try {
-    Write-Message -LogMessage "Stopping activity detection and cleaning up resources..." -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityDetectionStopping") -Type "Info"
 
     # Clear all script-scoped variables
     $script:LastCheckTime = $null
@@ -1086,9 +1160,9 @@ function Stop-ActivityDetection {
     if ($script:Config.BrightnessFlag) {
       try {
         Set-EnergyEfficiencyMode -Mode "Normal"
-        Write-Message -LogMessage "Energy efficiency settings restored to normal" -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "SettingsRestored") -Type "Info"
       } catch {
-        Write-Message -LogMessage "Failed to restore energy efficiency settings: $($_.Exception.Message)" -Type "Warning"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "SettingsRestoreFailed" -Arguments $_.Exception.Message) -Type "Warning"
       }
     }
 
@@ -1096,9 +1170,9 @@ function Stop-ActivityDetection {
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
 
-    Write-Message -LogMessage "Activity detection stopped and resources cleaned up successfully." -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityDetectionStopped") -Type "Info"
   } catch {
-    Write-Message -LogMessage "Error during cleanup: $($_.Exception.Message)" -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Performance" -Key "CleanupError" -Arguments $_.Exception.Message) -Type "Warning"
   }
 }
 
@@ -1132,7 +1206,7 @@ function Test-ActivityPattern {
     }
 
     if ($ActivityHistory.Count -lt 3) {
-      $pattern.Reasons += "Insufficient data for pattern analysis"
+      $pattern.Reasons += (Get-Text -Category "Activity" -Key "InsufficientData")
       return [PSCustomObject]$pattern
     }
 
@@ -1155,21 +1229,21 @@ function Test-ActivityPattern {
 
     if ($pattern.Irregularity -gt 5) {
       $pattern.Confidence += 30
-      $pattern.Reasons += "Irregular timing pattern detected"
+      $pattern.Reasons += (Get-Text -Category "Activity" -Key "IrregularTiming")
     }
 
     # Check for activity type diversity
     $activityTypes = $ActivityHistory | Group-Object ActivityType | Select-Object -ExpandProperty Count
     if ($activityTypes -gt 2) {
       $pattern.Confidence += 25
-      $pattern.Reasons += "Diverse activity types detected"
+      $pattern.Reasons += (Get-Text -Category "Activity" -Key "DiverseActivity")
     }
 
     # Check for reasonable intervals (not too fast)
     $tooFastCount = ($intervals | Where-Object { $_ -lt 0.1 }).Count
     if ($tooFastCount -lt $intervals.Count * 0.3) {
       $pattern.Confidence += 20
-      $pattern.Reasons += "Reasonable activity intervals"
+      $pattern.Reasons += (Get-Text -Category "Activity" -Key "ReasonableIntervals")
     }
 
     # Check for mouse movement patterns
@@ -1180,18 +1254,18 @@ function Test-ActivityPattern {
       
       if ($avgMovement -gt 10 -and $avgMovement -lt 500) {
         $pattern.Confidence += 25
-        $pattern.Reasons += "Natural mouse movement patterns"
+        $pattern.Reasons += (Get-Text -Category "Activity" -Key "NaturalMousePatterns")
       }
     }
 
     $pattern.IsHumanLike = $pattern.Confidence -ge 50
     return [PSCustomObject]$pattern
   } catch {
-    Write-Message -LogMessage "Error analyzing activity pattern: $($_.Exception.Message)" -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityPatternError" -Arguments $_.Exception.Message) -Type "Warning"
     return [PSCustomObject]@{
       IsHumanLike = $false
       Confidence = 0
-      Reasons = @("Pattern analysis failed")
+      Reasons = @((Get-Text -Category "Activity" -Key "PatternAnalysisFailed"))
       Irregularity = 0
     }
   }
@@ -1245,19 +1319,19 @@ function Test-WorkingHours {
     # Check if ForceRun is enabled
     if ($ForceRun) {
       $status.ShouldRun = $true
-      $status.Reason = "ForceRun enabled - bypassing all restrictions"
-      $status.BypassReasons += "All restrictions bypassed"
-      $status.Messages += "🚀 ForceRun enabled - running regardless of time/day restrictions"
+      $status.Reason = (Get-Text -Category "WorkingHours" -Key "ForceRunEnabled")
+      $status.BypassReasons += (Get-Text -Category "WorkingHours" -Key "AllRestrictionsBypassed")
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "ForceRunMessage")
       return [PSCustomObject]$status
     }
 
     # Check if it's a working day
     $isWorkingDay = $CurrentTime.DayOfWeek -notin $script:Config.NotWorkingDays
     if (-not $isWorkingDay) {
-      $status.Messages += "📅 Today is $($CurrentTime.DayOfWeek) - not a working day"
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "TodayIsNonWorkingDay" -Arguments $CurrentTime.DayOfWeek)
       if (-not $IgnoreWorkingHours) {
-        $status.Reason = "Not a working day"
-        $status.Messages += "❌ Script will not run on non-working days"
+        $status.Reason = (Get-Text -Category "WorkingHours" -Key "NotAWorkingDay")
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "ScriptNotRunNonWorkingDay")
         
         # Calculate next working day
         $nextWorkingDay = $CurrentTime
@@ -1266,23 +1340,23 @@ function Test-WorkingHours {
         } while ($nextWorkingDay.DayOfWeek -in $script:Config.NotWorkingDays)
         
         $status.NextRunTime = $nextWorkingDay.Date.Add($script:Config.TimeStart)
-        $status.Messages += "⏰ Next run: $($status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "NextRunNonWorkingDay" -Arguments $status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))
         return [PSCustomObject]$status
       } else {
-        $status.BypassReasons += "Working day restriction bypassed"
-        $status.Messages += "✅ Working day restriction bypassed"
+        $status.BypassReasons += (Get-Text -Category "WorkingHours" -Key "WorkingDayBypassed")
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "WorkingDayBypassedMessage")
       }
     } else {
-      $status.Messages += "✅ Today is $($CurrentTime.DayOfWeek) - working day"
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "TodayIsWorkingDay" -Arguments $CurrentTime.DayOfWeek)
     }
 
     # Check if it's a holiday
     $isHoliday = Test-Holiday -Date $CurrentTime -CountryCode $script:Config.CountryCode -LanguageCode $script:Config.LanguageCode
     if ($isHoliday) {
-      $status.Messages += "🎉 Today is a public holiday"
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "TodayIsHoliday")
       if (-not $IgnoreHolidays) {
-        $status.Reason = "Public holiday"
-        $status.Messages += "❌ Script will not run on public holidays"
+        $status.Reason = (Get-Text -Category "WorkingHours" -Key "PublicHoliday")
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "ScriptNotRunHoliday")
         
         # Calculate next working day after holiday
         $nextWorkingDay = $CurrentTime.AddDays(1)
@@ -1292,25 +1366,25 @@ function Test-WorkingHours {
         }
         
         $status.NextRunTime = $nextWorkingDay.Date.Add($script:Config.TimeStart)
-        $status.Messages += "⏰ Next run: $($status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "NextRunHoliday" -Arguments $status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))
         return [PSCustomObject]$status
       } else {
-        $status.BypassReasons += "Holiday restriction bypassed"
-        $status.Messages += "✅ Holiday restriction bypassed"
+        $status.BypassReasons += (Get-Text -Category "WorkingHours" -Key "HolidayBypassed")
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "HolidayBypassedMessage")
       }
     } else {
-      $status.Messages += "✅ Today is not a public holiday"
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "TodayIsNotHoliday")
     }
 
     # Check if it's within working hours
     $isWithinHours = $CurrentTime -ge $script:Config.TimeStart -and $CurrentTime -le $script:Config.TimeEnd
     if (-not $isWithinHours) {
-      $status.Messages += "🕐 Current time: $($CurrentTime.ToString('HH:mm:ss'))"
-      $status.Messages += "⏰ Working hours: $($script:Config.TimeStart.ToString('HH:mm:ss')) - $($script:Config.TimeEnd.ToString('HH:mm:ss'))"
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "CurrentTime" -Arguments $CurrentTime.ToString('HH:mm:ss'))
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "WorkingHours" -Arguments $script:Config.TimeStart.ToString('HH:mm:ss'), $script:Config.TimeEnd.ToString('HH:mm:ss'))
       
       if (-not $IgnoreWorkingHours) {
-        $status.Reason = "Outside working hours"
-        $status.Messages += "❌ Script will not run outside working hours"
+        $status.Reason = (Get-Text -Category "WorkingHours" -Key "OutsideWorkingHours")
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "ScriptNotRunOutsideHours")
         
         # Calculate next run time
         if ($CurrentTime -lt $script:Config.TimeStart) {
@@ -1327,14 +1401,14 @@ function Test-WorkingHours {
           $status.NextRunTime = $nextDay.Add($script:Config.TimeStart)
         }
         
-        $status.Messages += "⏰ Next run: $($status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "NextRunOutsideHours" -Arguments $status.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))
         return [PSCustomObject]$status
       } else {
-        $status.BypassReasons += "Working hours restriction bypassed"
-        $status.Messages += "✅ Working hours restriction bypassed"
+        $status.BypassReasons += (Get-Text -Category "WorkingHours" -Key "WorkingHoursBypassed")
+        $status.Messages += (Get-Text -Category "WorkingHours" -Key "WorkingHoursBypassedMessage")
       }
     } else {
-      $status.Messages += "✅ Current time is within working hours"
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "CurrentTimeWithinHours")
     }
 
     # Check if it's during a break
@@ -1353,24 +1427,24 @@ function Test-WorkingHours {
     }
 
     if ($isDuringBreak) {
-      $status.Messages += "☕ Currently during $breakInfo"
-      $status.Messages += "✅ Script will run during breaks"
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "DuringBreak" -Arguments $breakInfo)
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "ScriptRunsDuringBreaks")
     } else {
-      $status.Messages += "✅ Not during any scheduled break"
+      $status.Messages += (Get-Text -Category "WorkingHours" -Key "NotDuringBreak")
     }
 
     # All checks passed
     $status.ShouldRun = $true
-    $status.Reason = "All conditions met"
-    $status.Messages += "✅ All working hours conditions met - script will run"
+    $status.Reason = (Get-Text -Category "WorkingHours" -Key "AllConditionsMet")
+    $status.Messages += (Get-Text -Category "WorkingHours" -Key "AllConditionsMetMessage")
 
     return [PSCustomObject]$status
   } catch {
-    Write-Message -LogMessage "Error checking working hours: $($_.Exception.Message)" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorCheckingWorkingHours" -Arguments $_.Exception.Message) -Type "Critical"
     return [PSCustomObject]@{
       ShouldRun = $false
-      Reason = "Error checking working hours"
-      Messages = @("❌ Error checking working hours: $($_.Exception.Message)")
+      Reason = (Get-Text -Category "WorkingHours" -Key "ErrorCheckingWorkingHoursReason")
+      Messages = @((Get-Text -Category "WorkingHours" -Key "ErrorCheckingWorkingHoursMessage" -Arguments $_.Exception.Message))
       NextRunTime = $null
       BypassReasons = @()
     }
@@ -1440,7 +1514,7 @@ function Optimize-ScriptPerformance {
     # Adjust cooldown based on memory usage
     if ($resourceUsage.WorkingSet -gt 100MB) {
       $script:Config.TimeCooldown = [Math]::Min($script:Config.TimeCooldown + 1, 10)
-      Write-Message -LogMessage "Increased cooldown to $($script:Config.TimeCooldown)s due to high memory usage" -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "CooldownIncreased" -Arguments $script:Config.TimeCooldown) -Type "Info"
     } elseif ($resourceUsage.WorkingSet -lt 50MB) {
       $script:Config.TimeCooldown = [Math]::Max($script:Config.TimeCooldown - 1, 1)
     }
@@ -1449,12 +1523,12 @@ function Optimize-ScriptPerformance {
     if ($resourceUsage.GCMemory -gt 50MB) {
       [System.GC]::Collect()
       [System.GC]::WaitForPendingFinalizers()
-      Write-Message -LogMessage "Performed garbage collection due to high memory usage" -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "GarbageCollectionPerformed") -Type "Info"
     }
 
     # Log resource usage periodically
     if ($script:ActivityCheckCount -and $script:ActivityCheckCount % 100 -eq 0) {
-      Write-Message -LogMessage "Resource usage - Memory: $([Math]::Round($resourceUsage.WorkingSet / 1MB, 2))MB, Threads: $($resourceUsage.ThreadCount), Handles: $($resourceUsage.HandleCount)" -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "ResourceUsage" -Arguments ([Math]::Round($resourceUsage.WorkingSet / 1MB, 2)), $resourceUsage.ThreadCount, $resourceUsage.HandleCount) -Type "Info"
     }
   } catch {
     # Ignore optimization errors
@@ -1521,51 +1595,53 @@ function Show-ScriptHelp {
   [CmdletBinding()]
   param()
 
-  Write-Host "`n🚀 WakeyWindows - Keep Your PC Awake Script" -ForegroundColor Cyan
+  Write-Host "`n$(Get-Text -Category "Help" -Key "Title")" -ForegroundColor Cyan
   Write-Host ("=" * 70) -ForegroundColor Cyan
   
-  Write-Host "`n📋 PARAMETERS:" -ForegroundColor Yellow
+  Write-Host "`n$(Get-Text -Category "Help" -Key "SectionParameters")" -ForegroundColor Yellow
   $defaultMethod = if ($script:Config -and $script:Config.KeepAliveMethod) { $script:Config.KeepAliveMethod } else { "Send-KeyPress" }
-  Write-Host "  -Method <string>           : Keep-alive method (Send-KeyPress, Start-AppSession, etc.)" -ForegroundColor White
-  Write-Host "                            Default: $defaultMethod" -ForegroundColor Gray
-  Write-Host "  -Arg <string>              : Argument for the method (e.g., F16, Notepad)" -ForegroundColor White
+  Write-Host "  -Method <string>           : $(Get-Text -Category "Help" -Key "MethodDescription")" -ForegroundColor White
+  Write-Host "                            $(Get-Text -Category "Help" -Key "DefaultLabel" -Arguments $defaultMethod)" -ForegroundColor Gray
+  Write-Host "  -Arg <string>              : $(Get-Text -Category "Help" -Key "ArgDescription")" -ForegroundColor White
   $defaultKey = if ($script:Config -and $script:Config.Key) { $script:Config.Key } else { "random from config" }
-  Write-Host "                            Default: $defaultKey" -ForegroundColor Gray
-  Write-Host "  -IgnoreBrightness          : Disable brightness control" -ForegroundColor White
+  Write-Host "                            $(Get-Text -Category "Help" -Key "DefaultLabel" -Arguments $defaultKey)" -ForegroundColor Gray
+  Write-Host "  -IgnoreBrightness          : $(Get-Text -Category "Help" -Key "IgnoreBrightnessDescription")" -ForegroundColor White
   $brightnessDefault = if ($script:Config -and $script:Config.BrightnessFlag) { "enabled" } else { "disabled" }
-  Write-Host "                            Default: $brightnessDefault" -ForegroundColor Gray
-  Write-Host "  -IgnoreWorkingHours        : Bypass time restrictions" -ForegroundColor White
+  Write-Host "                            $(Get-Text -Category "Help" -Key "DefaultLabel" -Arguments $brightnessDefault)" -ForegroundColor Gray
+  Write-Host "  -IgnoreWorkingHours        : $(Get-Text -Category "Help" -Key "IgnoreWorkingHoursDescription")" -ForegroundColor White
   if ($script:Config -and $script:Config.TimeStart -and $script:Config.TimeEnd) {
-    Write-Host "                            Default: $($script:Config.TimeStart.ToString('HH:mm'))-$($script:Config.TimeEnd.ToString('HH:mm'))" -ForegroundColor Gray
+    $timeRange = "$($script:Config.TimeStart.ToString('HH:mm'))-$($script:Config.TimeEnd.ToString('HH:mm'))"
+    Write-Host "                            $(Get-Text -Category "Help" -Key "DefaultLabel" -Arguments $timeRange)" -ForegroundColor Gray
   }
-  Write-Host "  -IgnoreHolidays            : Bypass holiday restrictions" -ForegroundColor White
+  Write-Host "  -IgnoreHolidays            : $(Get-Text -Category "Help" -Key "IgnoreHolidaysDescription")" -ForegroundColor White
   if ($script:Config -and $script:Config.CountryCode) {
-    Write-Host "                            Default: enabled, country: $($script:Config.CountryCode)" -ForegroundColor Gray
+    $holidayInfo = "enabled, country: $($script:Config.CountryCode)"
+    Write-Host "                            $(Get-Text -Category "Help" -Key "DefaultLabel" -Arguments $holidayInfo)" -ForegroundColor Gray
   }
-  Write-Host "  -ForceRun                  : Bypass ALL restrictions" -ForegroundColor White
-  Write-Host "  -LogVerbosity <0-4>        : 0=Silent, 1=Errors, 2=Warnings+, 3=Info+, 4=Debug" -ForegroundColor White
+  Write-Host "  -ForceRun                  : $(Get-Text -Category "Help" -Key "ForceRunDescription")" -ForegroundColor White
+  Write-Host "  -LogVerbosity <0-4>        : $(Get-Text -Category "Help" -Key "LogVerbosityDescription")" -ForegroundColor White
   $defaultVerbosity = if ($script:Config -and $script:Config.LogVerbosity) { $script:Config.LogVerbosity } else { 4 }
-  Write-Host "                            Default: $defaultVerbosity" -ForegroundColor Gray
+  Write-Host "                            $(Get-Text -Category "Help" -Key "DefaultLabel" -Arguments $defaultVerbosity)" -ForegroundColor Gray
   
-  Write-Host "`n🔧 EXAMPLES:" -ForegroundColor Yellow
+  Write-Host "`n$(Get-Text -Category "Help" -Key "SectionExamples")" -ForegroundColor Yellow
   Write-Host "  .\Main.ps1 -Method Send-KeyPress -Arg F16" -ForegroundColor Green
   Write-Host "  .\Main.ps1 -Method Start-AppSession -Arg Notepad -IgnoreBrightness" -ForegroundColor Green
   Write-Host "  .\Main.ps1 -Method Send-KeyPress -Arg F16 -ForceRun" -ForegroundColor Green
   Write-Host "  .\Main.ps1 -Method Random -IgnoreWorkingHours" -ForegroundColor Green
   
-  Write-Host "`n⚡ KEEP-ALIVE METHODS:" -ForegroundColor Yellow
-  Write-Host "  Send-KeyPress              : Press a key (most efficient)" -ForegroundColor White
-  Write-Host "  Start-AppSession           : Open/close applications" -ForegroundColor White
-  Write-Host "  Start-EdgeSession          : Open/close web pages" -ForegroundColor White
-  Write-Host "  Invoke-CMDlet              : Run PowerShell commands" -ForegroundColor White
-  Write-Host "  Move-MouseRandom           : Move mouse cursor" -ForegroundColor White
-  Write-Host "  Random                     : Randomly choose method" -ForegroundColor White
+  Write-Host "`n$(Get-Text -Category "Help" -Key "SectionMethods")" -ForegroundColor Yellow
+  Write-Host (Get-Text -Category "Help" -Key "MethodSendKeyPress") -ForegroundColor White
+  Write-Host (Get-Text -Category "Help" -Key "MethodStartAppSession") -ForegroundColor White
+  Write-Host (Get-Text -Category "Help" -Key "MethodStartEdgeSession") -ForegroundColor White
+  Write-Host (Get-Text -Category "Help" -Key "MethodInvokeCMDlet") -ForegroundColor White
+  Write-Host (Get-Text -Category "Help" -Key "MethodMoveMouseRandom") -ForegroundColor White
+  Write-Host (Get-Text -Category "Help" -Key "MethodRandom") -ForegroundColor White
   
-  Write-Host "`n💡 TIPS:" -ForegroundColor Yellow
-  Write-Host "  • Use -ForceRun to run anytime" -ForegroundColor White
-  Write-Host "  • Use -IgnoreBrightness to disable screen dimming" -ForegroundColor White
-  Write-Host "  • Send-KeyPress is most energy efficient" -ForegroundColor White
-  Write-Host "  • Check Config.ps1 for customization options" -ForegroundColor White
+  Write-Host "`n$(Get-Text -Category "Help" -Key "SectionTips")" -ForegroundColor Yellow
+  Write-Host (Get-Text -Category "Help" -Key "TipForceRun") -ForegroundColor White
+  Write-Host (Get-Text -Category "Help" -Key "TipIgnoreBrightness") -ForegroundColor White
+  Write-Host (Get-Text -Category "Help" -Key "TipEnergyEfficient") -ForegroundColor White
+  Write-Host (Get-Text -Category "Help" -Key "TipConfigFile") -ForegroundColor White
   
   Write-Host ("=" * 70) -ForegroundColor Cyan
   Write-Host ""
@@ -1606,7 +1682,7 @@ function Get-WorkingHoursInfo {
 
     return [PSCustomObject]$info
   } catch {
-    Write-Message -LogMessage "Error getting working hours info: $($_.Exception.Message)" -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorGettingWorkingHoursInfo" -Arguments $_.Exception.Message) -Type "Warning"
     return [PSCustomObject]@{
       WorkingDays = @()
       WorkingHours = "Unknown"
@@ -1666,7 +1742,7 @@ function Test-Holiday {
       return $false
     }
   } catch {
-    Write-Message -LogMessage "Error checking public holiday: $($_.Exception.Message)" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorCheckingHoliday" -Arguments $_.Exception.Message) -Type "Critical"
     return $false
   }
 }
@@ -1696,7 +1772,7 @@ function Invoke-CMDlet {
 
   # Log execution information (if logging enabled)
   if ($Flag) {
-      Write-Message -LogMessage "Running cmdlet: '$CMDlet'" -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Running" -Arguments $CMDlet) -Type "Info"
   }
 
   try {
@@ -1705,14 +1781,14 @@ function Invoke-CMDlet {
 
     # Log success if logging is enabled
     if ($Flag) {
-        Write-Message -LogMessage "Cmdlet '$CMDlet' completed successfully." -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Completed" -Arguments $CMDlet) -Type "Info"
     }
 
     # Return the output
     return $Output
   } catch {
       # Log the error
-      Write-Message -LogMessage "Error executing cmdlet '$CMDlet': $($_.Exception.Message)" -Type "Critical"
+      Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Error" -Arguments $CMDlet, $_.Exception.Message) -Type "Critical"
   }
 }
 
@@ -1738,7 +1814,7 @@ function Send-KeyPress {
 
   # Validate key is not empty
   if ([string]::IsNullOrWhiteSpace($Key)) {
-    Write-Message -LogMessage "Key argument is empty or null." -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyEmptyOrNull") -Type "Warning"
     return
   }
 
@@ -1826,8 +1902,8 @@ namespace Win32 {
         # Calculate virtual key code (F1 = 0x70, F2 = 0x71, ..., F16 = 0x7F)
         $vk = [ushort](0x70 + ($fn - 1))
         
-    # Log the event
-    Write-Message -LogMessage "The key '$Key' (F$fn) is going to be pressed using Win32 API." -Type "Info" -Level 2
+        # Log the event
+        Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyGoingToBePressedWin32" -Arguments $Key, $fn) -Type "Info" -Level 2
         
         # Send using Win32 SendInput
         [Win32.KeyboardInput]::SendVirtualKey($vk)
@@ -1836,7 +1912,7 @@ namespace Win32 {
     }
 
     # Log the event
-    Write-Message -LogMessage "The key '$Key' is going to be pressed." -Type "Info" -Level 2
+    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyGoingToBePressed" -Arguments $Key) -Type "Info" -Level 2
 
     # Flush any pending keystrokes for reliability
     [System.Windows.Forms.SendKeys]::Flush()
@@ -1845,9 +1921,9 @@ namespace Win32 {
     [System.Windows.Forms.SendKeys]::SendWait($Key)
 
   } catch [System.Reflection.ReflectionTypeLoadException] {
-    Write-Message -LogMessage "Failed to load System.Windows.Forms assembly: $($_.Exception.Message)" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "AssemblyLoadFailed" -Arguments $_.Exception.Message) -Type "Critical"
   } catch {
-    Write-Message -LogMessage "Error sending key '$Key': $($_.Exception.Message)" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeySendFailed" -Arguments $Key, $_.Exception.Message) -Type "Critical"
   }
 }
 
@@ -1881,12 +1957,12 @@ function Move-MouseRandom {
     $RandomY = Get-Random -Minimum $MinOffset -Maximum $MaxOffset
 
     # Log the event
-    Write-Message -LogMessage "Moving mouse cursor from [$($Position.X), $($Position.Y)] to a random position within screen boundaries: [$RandomX, $RandomY]" -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Mouse" -Key "MouseMoving" -Arguments $Position.X, $Position.Y, $RandomX, $RandomY) -Type "Info"
 
     # Set the new position of the mouse cursor
     [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point ($RandomX, $RandomY)
   } catch {
-    Write-Message -LogMessage "Error moving the mouse cursor: $_" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Mouse" -Key "MouseMoveFailed" -Arguments $_) -Type "Critical"
   }
 }
 
@@ -1919,18 +1995,18 @@ function Start-AppSession {
     Start-Process $Application
 
     # Log the event with calculated wait time
-    Write-Message -LogMessage "The application '$Application' will be opened for '$(Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $WaitTime))' and then closed at '$((Get-Date).AddSeconds($WaitTime))'." -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppWillOpen" -Arguments $Application, (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $WaitTime)), (Get-Date).AddSeconds($WaitTime)) -Type "Info"
 
     # Wait for the specified time
     Start-Sleep $WaitTime
 
     # Log the event
-    Write-Message -LogMessage "The application '$Application' is being closed." -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppBeingClosed" -Arguments $Application) -Type "Info"
 
     # Close the application
     Stop-Process -Name "*$Application*"
   } catch {
-    Write-Message -LogMessage "Error opening or closing the application: $_" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppError" -Arguments $_) -Type "Critical"
   }
 }
 
@@ -1965,7 +2041,7 @@ function Start-EdgeSession {
     Start-Process microsoft-edge:$Webpage
 
     # Log the event with calculated wait time
-    Write-Message -LogMessage "The webpage '$Webpage' will be opened in Edge for '$(Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $WaitTime))' and then closed at '$CloseTime'." -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageWillOpen" -Arguments $Webpage, (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $WaitTime)), $CloseTime) -Type "Info"
 
     # Scroll the page while waiting for the closing time
     while ($CloseTime -gt (Get-Date)) {
@@ -1979,9 +2055,9 @@ function Start-EdgeSession {
     [System.Windows.Forms.SendKeys]::SendWait("^{w}") # Send Ctrl+w to close active tab
 
     # Log the event
-    Write-Message -LogMessage "The webpage '$Webpage' is being closed." -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageBeingClosed" -Arguments $Webpage) -Type "Info"
   } catch {
-    Write-Message -LogMessage "Error opening or closing the webpage: '$Webpage'" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageError" -Arguments $Webpage) -Type "Critical"
   }
 }
 
@@ -2032,7 +2108,7 @@ function Set-ScreenBrightness {
     $monitors = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue
     
     if (-not $monitors) {
-      Write-Message -LogMessage "No monitors found for brightness control." -Type "Warning"
+      Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "NoMonitorsFound") -Type "Warning"
       return
     }
 
@@ -2043,7 +2119,7 @@ function Set-ScreenBrightness {
       $currentBrightness = $monitor.CurrentBrightness
       
       if ($Level -ne $currentBrightness) {
-        Write-Message -LogMessage "Adjusting monitor brightness from $currentBrightness% to $Level%." -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessAdjusting" -Arguments $currentBrightness, $Level) -Type "Info"
 
         if ($SmoothTransition -or $script:Config.BrightnessSmoothTransition) {
           # Smooth transition
@@ -2073,13 +2149,13 @@ function Set-ScreenBrightness {
               Invoke-CimMethod -InputObject $brightnessMethods -MethodName "WmiSetBrightness" -Arguments @{Timeout=0; Brightness=$Level} | Out-Null
             }
           } catch {
-            Write-Message -LogMessage "Failed to set brightness using WMI method." -Type "Warning"
+            Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessSetFailed") -Type "Warning"
           }
         }
       }
     }
   } catch {
-    Write-Message -LogMessage "Error adjusting screen brightness: $($_.Exception.Message)" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessError" -Arguments $_.Exception.Message) -Type "Critical"
   }
 }
 
@@ -2133,12 +2209,12 @@ function Set-MonitorPower {
     $result = [MonitorPower]::SendMessage($desktopWindow, [MonitorPower]::WM_SYSCOMMAND, [MonitorPower]::SC_MONITORPOWER, [IntPtr]$command)
     
     if ($result -eq 0) {
-      Write-Message -LogMessage "Monitor power set to $State." -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerSet" -Arguments $State) -Type "Info"
     } else {
-      Write-Message -LogMessage "Failed to set monitor power to $State." -Type "Warning"
+      Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerFailed" -Arguments $State) -Type "Warning"
     }
   } catch {
-    Write-Message -LogMessage "Error controlling monitor power: $($_.Exception.Message)" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerError" -Arguments $_.Exception.Message) -Type "Critical"
   }
 }
 
@@ -2187,7 +2263,7 @@ function Get-MonitorInfo {
     
     return $monitors
   } catch {
-    Write-Message -LogMessage "Error getting monitor information: $($_.Exception.Message)" -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "MonitorInfoError" -Arguments $_.Exception.Message) -Type "Warning"
     return @()
   }
 }
@@ -2221,7 +2297,7 @@ function Set-EnergyEfficiencyMode {
           Set-ScreenBrightness -Level $script:Config.BrightnessInitial -SmoothTransition:$script:Config.BrightnessSmoothTransition
         }
         Set-MonitorPower -State "On"
-        Write-Message -LogMessage "Energy efficiency mode set to Normal." -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetNormal") -Type "Info"
       }
       
       "Dim" {
@@ -2229,22 +2305,22 @@ function Set-EnergyEfficiencyMode {
         if ($script:Config.BrightnessFlag) {
           Set-ScreenBrightness -Level $script:Config.BrightnessMin -SmoothTransition:$script:Config.BrightnessSmoothTransition
         }
-        Write-Message -LogMessage "Energy efficiency mode set to Dim." -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetDim") -Type "Info"
       }
       
       "Sleep" {
         # Put monitors to sleep
         Set-MonitorPower -State "Standby"
-        Write-Message -LogMessage "Energy efficiency mode set to Sleep." -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetSleep") -Type "Info"
       }
       
       "Off" {
         # Turn off monitors completely
         Set-MonitorPower -State "Off"
-        Write-Message -LogMessage "Energy efficiency mode set to Off." -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetOff") -Type "Info"
       }
     }
   } catch {
-    Write-Message -LogMessage "Error setting energy efficiency mode: $($_.Exception.Message)" -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetError" -Arguments $_.Exception.Message) -Type "Critical"
   }
 }

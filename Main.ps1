@@ -82,6 +82,9 @@ param(
   [switch]$Help                # Pass -Help to show help information
 )
 
+# Load texts first (needed by modules)
+. .\Texts.ps1
+
 # Show help if requested
 if ($Help) {
   . .\Modules.ps1
@@ -126,9 +129,9 @@ foreach ($message in $workingHoursStatus.Messages) {
 
 # Check if we should run
 if (-not $workingHoursStatus.ShouldRun) {
-  Write-Message -LogMessage "Script will not run: $($workingHoursStatus.Reason)" -Type "Warning" -Level 2
+  Write-Message -LogMessage (Get-Text -Category "General" -Key "ScriptWillNotRun" -Arguments $workingHoursStatus.Reason) -Type "Warning" -Level 2
   if ($workingHoursStatus.NextRunTime) {
-    Write-Message -LogMessage "Next scheduled run: $($workingHoursStatus.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "General" -Key "NextScheduledRun" -Arguments $workingHoursStatus.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss')) -Type "Info"
   }
   
   # Show comprehensive help using Show-ScriptHelp function
@@ -139,7 +142,7 @@ if (-not $workingHoursStatus.ShouldRun) {
 
 # Display bypass information if any
 if ($workingHoursStatus.BypassReasons.Count -gt 0) {
-  Write-Message -LogMessage "Bypass options active: $($workingHoursStatus.BypassReasons -join ', ')" -Type "Info"
+  Write-Message -LogMessage (Get-Text -Category "General" -Key "BypassOptionsActive" -Arguments ($workingHoursStatus.BypassReasons -join ', ')) -Type "Info"
 }
 
 # Handle the log file
@@ -147,26 +150,26 @@ if ($script:Config.TranscriptStarted) {
   # Stop transcription if it is running
   try {
     Stop-Transcript
-    Write-Message -LogMessage "Transcription stopped successfully."
+    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStoppedSuccess")
   } catch {
     if ($_.Exception.Message -like "*The host is not currently transcribing*") {
-      Write-Message -LogMessage "No active transcription to stop." -Type "Warning" -Level 2
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "NoActiveTranscription") -Type "Warning" -Level 2
     } else {
-      Write-Message -LogMessage "Failed to stop transcription: $($_.Exception.Message)" -Type "Error" -Level 1
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStopFailed" -Arguments $_.Exception.Message) -Type "Error" -Level 1
     }
   }
   # Start transcription with error handling
   try {
     # Start logging everything in the file
     Start-Transcript -Path $script:Config.TranscriptFileLocation
-    Write-Message -LogMessage "Transcription started: $($script:Config.TranscriptFileLocation)" -Type "Info" -Level 2
+    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStarted" -Arguments $script:Config.TranscriptFileLocation) -Type "Info" -Level 2
   } catch {
-    Write-Message -LogMessage "Failed to start transcription: $($_.Exception.Message)" -Type "Error" -Level 1
+    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStartFailed" -Arguments $_.Exception.Message) -Type "Error" -Level 1
   }
 } else {
     Start-Transcript -Path $script:Config.TranscriptFileLocation -Append
     $script:Config.TranscriptStarted = $true
-    Write-Message -LogMessage "Transcription started: $($script:Config.TranscriptFileLocation)" -Type "Info" -Level 2
+    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStarted" -Arguments $script:Config.TranscriptFileLocation) -Type "Info" -Level 2
 }
 
 while ($true) {
@@ -177,14 +180,14 @@ while ($true) {
     # Apply command line brightness override after config reload
     if ($IgnoreBrightness) {
       $script:Config.BrightnessFlag = $false
-      Write-Message -LogMessage "Brightness changes disabled via command line switch" -Type "Info" -Level 2
+      Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessDisabled") -Type "Info" -Level 2
     }
 
     # Apply command line log verbosity override (0-4)
     if ($PSBoundParameters.ContainsKey('LogVerbosity')) {
       $newVerbosity = [Math]::Max(0, [Math]::Min(4, [int]$LogVerbosity))
       $script:Config.LogVerbosity = $newVerbosity
-      Write-Message -LogMessage "Log verbosity set to $newVerbosity (0=Silent, 1=Errors, 2=Warnings+, 3=Info+, 4=Debug)" -Type "Info" -Level 2
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "LogVerbositySet" -Arguments $newVerbosity) -Type "Info" -Level 2
     }
 
     # Check if the user is active; if so, wait until they are inactive
@@ -206,7 +209,7 @@ while ($true) {
     if ($Method) {
       $script:Config.KeepAliveMethod = $Method
       # Log the event
-      Write-Message -LogMessage "The method '$($script:Config.KeepAliveMethod)' is defined by the user." -Type "Info" -Level 3
+      Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "MethodDefinedByUser" -Arguments $script:Config.KeepAliveMethod) -Type "Info" -Level 3
       $Method = $null  # Nullify the Method variable to prevent repeated messages
     }
     if ($Arg) {
@@ -215,7 +218,7 @@ while ($true) {
                 # Ensure the key is wrapped in double quotes and curly braces if missing
                 if ($Arg -notmatch '^\{.*\}$') {
                   $script:Config.Key = "{$Arg}"
-                  Write-Message -LogMessage "Key argument was not in correct format. Converted to $($script:Config.Key)." -Type "Warning" -Level 2
+                  Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "KeyFormatConverted" -Arguments $script:Config.Key) -Type "Warning" -Level 2
                 } else {
                     $script:Config.Key = $Arg
                 }
@@ -225,7 +228,7 @@ while ($true) {
             "Invoke-CMDlet" { $script:Config.CMDlet = [ScriptBlock]::Create($Arg) }
         }
         # Log the event
-        Write-Message -LogMessage "The argument of '$Arg' for '$($script:Config.KeepAliveMethod)' is defined by the user." -Type "Info" -Level 2
+        Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "ArgumentDefinedByUser" -Arguments $Arg, $script:Config.KeepAliveMethod) -Type "Info" -Level 2
         $Arg = $null  # Nullify the Arg variable to prevent repeated messages
     }
 
@@ -241,7 +244,7 @@ while ($true) {
         $Func = Get-Random @("Send-KeyPress", "Start-EdgeSession", "Invoke-CMDlet", "Start-AppSession", "Move-MouseRandom")
 
         # Log the event
-        Write-Message -LogMessage "The function '$Func' is running."
+        Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "FunctionRunning" -Arguments $Func)
 
         # Dynamically call the function with arguments
         switch ($Func) {
@@ -253,33 +256,33 @@ while ($true) {
         }
       }
       default {
-        Write-Message -LogMessage "Invalid keep-alive method: $($script:Config.KeepAliveMethod); Ignoring." -Type "Critical" -Level 1
+        Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "InvalidMethodIgnored" -Arguments $script:Config.KeepAliveMethod) -Type "Critical" -Level 1
       }
     }
 
     # Wait for a random time
     $TimeWait01 = Get-Random -Minimum $script:Config.TimeWaitMin -Maximum $script:Config.TimeWaitMax
     # Log the event
-    Write-Message -LogMessage "The script will be paused for $(Convert-TimeSpanToHumanReadable $(New-TimeSpan -Seconds $TimeWait01)); resume at $((Get-Date).AddSeconds($TimeWait01))." -Type "Info" -Level 2
+    Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "ScriptPaused" -Arguments (Convert-TimeSpanToHumanReadable $(New-TimeSpan -Seconds $TimeWait01)), (Get-Date).AddSeconds($TimeWait01)) -Type "Info" -Level 2
     
     # Check if we should continue running (re-evaluate working hours periodically)
     $currentTime = Get-Date
     if (-not $ForceRun -and -not $IgnoreWorkingHours -and -not $IgnoreHolidays) {
       # Check if we've moved outside working hours
       if ($currentTime -gt $script:Config.TimeEnd) {
-        Write-Message -LogMessage "Working hours ended. Script will stop." -Type "Info" -Level 2
+        Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "WorkingHoursEnded") -Type "Info" -Level 2
         break
       }
       
       # Check if it's no longer a working day (in case we're running overnight)
       if ($currentTime.DayOfWeek -in $script:Config.NotWorkingDays) {
-        Write-Message -LogMessage "Non-working day detected. Script will stop." -Type "Info" -Level 2
+        Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "NonWorkingDayDetected") -Type "Info" -Level 2
         break
       }
       
       # Check if it's now a holiday
       if (Test-Holiday -Date $currentTime -CountryCode $script:Config.CountryCode -LanguageCode $script:Config.LanguageCode) {
-        Write-Message -LogMessage "Public holiday detected. Script will stop." -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "PublicHolidayDetected") -Type "Info"
         break
       }
     }
@@ -289,8 +292,8 @@ while ($true) {
 
   } catch {
     # Handle errors during keep-alive methods or checks
-    Write-Message -LogMessage "Error keeping system awake: $($_.Exception.Message)" -Type "Critical" -Level 1
-    Write-Message -LogMessage "Error occurred. Pausing script for 60 seconds." -Type "Critical" -Level 1
+    Write-Message -LogMessage (Get-Text -Category "System" -Key "ErrorKeepingAwake" -Arguments $_.Exception.Message) -Type "Critical" -Level 1
+    Write-Message -LogMessage (Get-Text -Category "System" -Key "ErrorPausing") -Type "Critical" -Level 1
     Start-Sleep -Seconds 60
   }
 
@@ -300,7 +303,7 @@ while ($true) {
 try {
   Stop-ActivityDetection
 } catch {
-  Write-Message -LogMessage "Error during activity detection cleanup: $($_.Exception.Message)" -Type "Warning" -Level 2
+  Write-Message -LogMessage (Get-Text -Category "Performance" -Key "ActivityCleanupError" -Arguments $_.Exception.Message) -Type "Warning" -Level 2
 }
 
 # Stop logging everything in the file
@@ -308,12 +311,12 @@ if ($script:Config.TranscriptStarted) {
   try {
     Stop-Transcript
     $script:Config.TranscriptStarted = $false
-    Write-Message -LogMessage "Transcription stopped." -Type "Info" -Level 2
+    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStopped") -Type "Info" -Level 2
   } catch {
     if ($_.Exception.Message -like "*The host is not currently transcribing*") {
-      Write-Message -LogMessage "No active transcription to stop." -Type "Warning" -Level 2
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "NoActiveTranscription") -Type "Warning" -Level 2
     } else {
-      Write-Message -LogMessage "Failed to stop transcription: $($_.Exception.Message)" -Type "Error" -Level 1
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStopFailed" -Arguments $_.Exception.Message) -Type "Error" -Level 1
     }
   }
 }
