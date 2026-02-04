@@ -44,6 +44,14 @@
   - 3: All Info messages (Level 1-3)
   - 4: Debug/Verbose (all messages, Level 1-4)
 
+.PARAMETER Stealth
+  Enable stealth mode to reduce detection signatures:
+  - Uses SetThreadExecutionState API instead of keystrokes
+  - Disables all logging and transcription
+  - Uses low-level mouse API with small movements
+  - Randomizes timing with jitter to avoid patterns
+  - Masks SendInput dwExtraInfo when keystrokes are needed
+
 .PARAMETER Help
   Display detailed help information using Show-ScriptHelp function.
 
@@ -62,6 +70,12 @@
   
   Open/close Notepad periodically, with brightness control disabled.
 
+.EXAMPLE
+  .\Main.ps1 -Stealth -ForceRun
+  
+  Run in stealth mode with all restrictions bypassed. Uses SetThreadExecutionState API,
+  disables all logging, and randomizes timing to avoid detection patterns.
+
 .NOTES
   - Working hours, holidays, and other defaults are configured in Config.ps1
   - The script will automatically stop outside working hours unless bypassed
@@ -79,6 +93,7 @@ param(
   [switch]$IgnoreHolidays,     # Pass -IgnoreHolidays to bypass holiday restrictions
   [switch]$ForceRun,           # Pass -ForceRun to bypass ALL restrictions (time, holidays, etc.)
   [int]$LogVerbosity,          # 0=Silent, 1=Errors only, 2=Warnings+, 3=Info+, 4=Debug/Verbose
+  [switch]$Stealth,            # Pass -Stealth to enable stealth mode (reduces detection)
   [switch]$Help                # Pass -Help to show help information
 )
 
@@ -95,6 +110,34 @@ if ($Help) {
 # Load modules and configurations
 . .\Modules.ps1
 . .\Config.ps1
+
+# Load version from file
+$script:Version = if (Test-Path ".\Version") { (Get-Content ".\Version" -Raw).Trim() } else { "1.0.0" }
+
+# Initialize stealth mode flag
+$script:StealthMode = $Stealth
+
+# Show banner (unless in stealth mode)
+Show-Banner -Version $script:Version -Stealth:$script:StealthMode
+
+# Apply stealth mode settings if enabled
+if ($script:StealthMode) {
+  # Disable transcription (major detection vector)
+  $script:Config.TranscriptFlag = $false
+  
+  # Set log verbosity to 0 (silent) unless explicitly overridden
+  if (-not $PSBoundParameters.ContainsKey('LogVerbosity')) {
+    $script:Config.LogVerbosity = 0
+    $script:Config.LogWriteToConsole = $false
+    $script:Config.LogWriteToFile = $false
+  }
+  
+  # Disable activity detection logging
+  $script:Config.LogFlag = $false
+  
+  # Disable brightness control (reduces API calls)
+  $script:Config.BrightnessFlag = $false
+}
 
 # Track script start time for status monitoring
 $script:ScriptStartTime = Get-Date
@@ -145,31 +188,36 @@ if ($workingHoursStatus.BypassReasons.Count -gt 0) {
   Write-Message -LogMessage (Get-Text -Category "General" -Key "BypassOptionsActive" -Arguments ($workingHoursStatus.BypassReasons -join ', ')) -Type "Info" -Category "General"
 }
 
-# Handle the log file
-if ($script:Config.TranscriptStarted) {
-  # Stop transcription if it is running
-  try {
-    Stop-Transcript
-    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStoppedSuccess") -Category "General"
-  } catch {
-    if ($_.Exception.Message -like "*The host is not currently transcribing*") {
-      Write-Message -LogMessage (Get-Text -Category "General" -Key "NoActiveTranscription") -Type "Warning" -Level 2 -Category "General"
-    } else {
-      Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStopFailed" -Arguments $_.Exception.Message) -Type "Error" -Level 1 -Category "General"
+# Handle the log file (skip in stealth mode)
+if (-not $script:StealthMode) {
+  if ($script:Config.TranscriptStarted) {
+    # Stop transcription if it is running
+    try {
+      Stop-Transcript
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStoppedSuccess") -Category "General"
+    } catch {
+      if ($_.Exception.Message -like "*The host is not currently transcribing*") {
+        Write-Message -LogMessage (Get-Text -Category "General" -Key "NoActiveTranscription") -Type "Warning" -Level 2 -Category "General"
+      } else {
+        Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStopFailed" -Arguments $_.Exception.Message) -Type "Error" -Level 1 -Category "General"
+      }
     }
-  }
-  # Start transcription with error handling
-  try {
-    # Start logging everything in the file
-    Start-Transcript -Path $script:Config.TranscriptFileLocation
-    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStarted" -Arguments $script:Config.TranscriptFileLocation) -Type "Info" -Level 2 -Category "General"
-  } catch {
-    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStartFailed" -Arguments $_.Exception.Message) -Type "Error" -Level 1
+    # Start transcription with error handling
+    try {
+      # Start logging everything in the file
+      Start-Transcript -Path $script:Config.TranscriptFileLocation
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStarted" -Arguments $script:Config.TranscriptFileLocation) -Type "Info" -Level 2 -Category "General"
+    } catch {
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStartFailed" -Arguments $_.Exception.Message) -Type "Error" -Level 1
+    }
+  } else {
+      Start-Transcript -Path $script:Config.TranscriptFileLocation -Append
+      $script:Config.TranscriptStarted = $true
+      Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStarted" -Arguments $script:Config.TranscriptFileLocation) -Type "Info" -Level 2 -Category "General"
   }
 } else {
-    Start-Transcript -Path $script:Config.TranscriptFileLocation -Append
-    $script:Config.TranscriptStarted = $true
-    Write-Message -LogMessage (Get-Text -Category "General" -Key "TranscriptionStarted" -Arguments $script:Config.TranscriptFileLocation) -Type "Info" -Level 2 -Category "General"
+  # Stealth mode: no transcription
+  $script:Config.TranscriptStarted = $false
 }
 
 while ($true) {
@@ -191,19 +239,22 @@ while ($true) {
     }
 
     # Check if the user is active; if so, wait until they are inactive
-    $pollInterval = 2
-    $activeElapsed = 0
+    # (Skip in stealth mode to reduce API calls and detection)
+    if (-not $script:StealthMode) {
+      $pollInterval = 2
+      $activeElapsed = 0
 
-    while ($activeElapsed -lt $script:Config.TimeWaitMax) {
-      if (-not (Test-UserActivity)) {
-        break
+      while ($activeElapsed -lt $script:Config.TimeWaitMax) {
+        if (-not (Test-UserActivity)) {
+          break
+        }
+        Start-Sleep -Seconds $pollInterval
+        $activeElapsed += $pollInterval
       }
-      Start-Sleep -Seconds $pollInterval
-      $activeElapsed += $pollInterval
-    }
 
-    # Optimize performance periodically
-    Optimize-ScriptPerformance
+      # Optimize performance periodically
+      Optimize-ScriptPerformance
+    }
 
     # Override config if arguments are provided
     if ($Method) {
@@ -233,37 +284,68 @@ while ($true) {
     }
 
     # Run the method of keeping Windows awake
-    switch -Exact ($script:Config.KeepAliveMethod) {
-      "Send-KeyPress" { Send-KeyPress -Key $script:Config.Key }
-      "Start-AppSession" { Start-AppSession -Application $script:Config.Application }
-      "Start-EdgeSession" { Start-EdgeSession -Webpage $script:Config.Webpage }
-      "Invoke-CMDlet" { Invoke-CMDlet -CMDlet $script:Config.CMDlet }
-      "Move-MouseRandom" { Move-MouseRandom }
-      # "Change-Teams-Status" { Change-Teams-Status }
-      "Random" {
-        $Func = Get-Random @("Send-KeyPress", "Start-EdgeSession", "Invoke-CMDlet", "Start-AppSession", "Move-MouseRandom")
-
-        # Log the event
-        Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "FunctionRunning" -Arguments $Func) -Category "KeepAlive"
-
-        # Dynamically call the function with arguments
-        switch ($Func) {
-          "Send-KeyPress" { Send-KeyPress -Key $script:Config.Key }
-          "Start-AppSession" { Start-AppSession -Application $script:Config.Application }
-          "Start-EdgeSession" { Start-EdgeSession -Webpage $script:Config.Webpage }
-          "Invoke-CMDlet" { Invoke-CMDlet -CMDlet $script:Config.CMDlet }
-          "Move-MouseRandom" { Move-MouseRandom }
+    if ($script:StealthMode) {
+      # Stealth mode: prefer SetThreadExecutionState, fallback to stealth methods
+      switch -Exact ($script:Config.KeepAliveMethod) {
+        "Send-KeyPress" { 
+          # Use SetThreadExecutionState API (no keystrokes, no events)
+          Set-ExecutionState -Continuous:$false
+        }
+        "Move-MouseRandom" { 
+          # Use low-level mouse API with small movements
+          Move-MouseStealth
+        }
+        "Random" {
+          # In stealth mode, only use stealth-safe methods
+          $stealthFunc = Get-Random @("Set-ExecutionState", "Move-MouseStealth")
+          switch ($stealthFunc) {
+            "Set-ExecutionState" { Set-ExecutionState -Continuous:$false }
+            "Move-MouseStealth" { Move-MouseStealth }
+          }
+        }
+        default {
+          # For all other methods in stealth mode, use SetThreadExecutionState
+          Set-ExecutionState -Continuous:$false
         }
       }
-      default {
-        Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "InvalidMethodIgnored" -Arguments $script:Config.KeepAliveMethod) -Type "Critical" -Level 1 -Category "KeepAlive"
+    } else {
+      # Normal mode: use configured methods
+      switch -Exact ($script:Config.KeepAliveMethod) {
+        "Send-KeyPress" { Send-KeyPress -Key $script:Config.Key }
+        "Start-AppSession" { Start-AppSession -Application $script:Config.Application }
+        "Start-EdgeSession" { Start-EdgeSession -Webpage $script:Config.Webpage }
+        "Invoke-CMDlet" { Invoke-CMDlet -CMDlet $script:Config.CMDlet }
+        "Move-MouseRandom" { Move-MouseRandom }
+        # "Change-Teams-Status" { Change-Teams-Status }
+        "Random" {
+          $Func = Get-Random @("Send-KeyPress", "Start-EdgeSession", "Invoke-CMDlet", "Start-AppSession", "Move-MouseRandom")
+
+          # Log the event
+          Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "FunctionRunning" -Arguments $Func) -Category "KeepAlive"
+
+          # Dynamically call the function with arguments
+          switch ($Func) {
+            "Send-KeyPress" { Send-KeyPress -Key $script:Config.Key }
+            "Start-AppSession" { Start-AppSession -Application $script:Config.Application }
+            "Start-EdgeSession" { Start-EdgeSession -Webpage $script:Config.Webpage }
+            "Invoke-CMDlet" { Invoke-CMDlet -CMDlet $script:Config.CMDlet }
+            "Move-MouseRandom" { Move-MouseRandom }
+          }
+        }
+        default {
+          Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "InvalidMethodIgnored" -Arguments $script:Config.KeepAliveMethod) -Type "Critical" -Level 1 -Category "KeepAlive"
+        }
       }
     }
 
-    # Wait for a random time
-    $TimeWait01 = Get-Random -Minimum $script:Config.TimeWaitMin -Maximum $script:Config.TimeWaitMax
-    # Log the event
-    Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "ScriptPaused" -Arguments (Convert-TimeSpanToHumanReadable $(New-TimeSpan -Seconds $TimeWait01)), (Get-Date).AddSeconds($TimeWait01)) -Type "Info" -Level 2 -Category "KeepAlive"
+    # Wait for a random time (use stealth randomization in stealth mode)
+    if ($script:StealthMode) {
+      $TimeWait01 = Get-RandomIntervalStealth -Min $script:Config.TimeWaitMin -Max $script:Config.TimeWaitMax
+    } else {
+      $TimeWait01 = Get-Random -Minimum $script:Config.TimeWaitMin -Maximum $script:Config.TimeWaitMax
+      # Log the event (only in normal mode)
+      Write-Message -LogMessage (Get-Text -Category "KeepAlive" -Key "ScriptPaused" -Arguments (Convert-TimeSpanToHumanReadable $(New-TimeSpan -Seconds $TimeWait01)), (Get-Date).AddSeconds($TimeWait01)) -Type "Info" -Level 2 -Category "KeepAlive"
+    }
     
     # Check if we should continue running (re-evaluate working hours periodically)
     $currentTime = Get-Date
@@ -300,10 +382,21 @@ while ($true) {
 }
 
 # Stop activity detection and clean up resources
-try {
-  Stop-ActivityDetection
-} catch {
-  Write-Message -LogMessage (Get-Text -Category "Performance" -Key "ActivityCleanupError" -Arguments $_.Exception.Message) -Type "Warning" -Level 2
+if (-not $script:StealthMode) {
+  try {
+    Stop-ActivityDetection
+  } catch {
+    Write-Message -LogMessage (Get-Text -Category "Performance" -Key "ActivityCleanupError" -Arguments $_.Exception.Message) -Type "Warning" -Level 2
+  }
+} else {
+  # In stealth mode, reset execution state to allow normal sleep
+  try {
+    if ("Win32.PowerManagement" -as [type]) {
+      [Win32.PowerManagement]::AllowSleep()
+    }
+  } catch {
+    # Silently ignore cleanup errors in stealth mode
+  }
 }
 
 # Stop logging everything in the file

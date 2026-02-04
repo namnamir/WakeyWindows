@@ -2346,3 +2346,346 @@ function Set-EnergyEfficiencyMode {
     Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetError" -Arguments $_.Exception.Message) -Type "Critical" -Category "Energy"
   }
 }
+
+
+# ============================================================================
+# Stealth Mode Functions
+# ============================================================================
+
+function Set-ExecutionState {
+  <#
+    .SYNOPSIS
+    Uses Windows SetThreadExecutionState API to prevent sleep (stealth mode).
+    .DESCRIPTION
+    Calls the legitimate Windows API to prevent system sleep without generating keystroke events.
+    This is the most stealthy method as it doesn't create any detectable keyboard/mouse events.
+    .PARAMETER Continuous
+    If set, keeps the execution state active continuously. Otherwise, resets it periodically.
+    .OUTPUTS
+    None
+  #>
+  
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $false)]
+    [switch]$Continuous
+  )
+  
+  try {
+    if (-not ("Win32.PowerManagement" -as [type])) {
+      Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace Win32 {
+    public static class PowerManagement {
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern uint SetThreadExecutionState(uint esFlags);
+        
+        const uint ES_CONTINUOUS = 0x80000000;
+        const uint ES_SYSTEM_REQUIRED = 0x00000001;
+        const uint ES_DISPLAY_REQUIRED = 0x00000002;
+        const uint ES_AWAYMODE_REQUIRED = 0x00000040;
+        
+        public static void PreventSleep(bool continuous = false) {
+            uint flags = ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED;
+            if (continuous) flags |= ES_CONTINUOUS;
+            SetThreadExecutionState(flags);
+        }
+        
+        public static void AllowSleep() {
+            SetThreadExecutionState(ES_CONTINUOUS);
+        }
+    }
+}
+"@ -ErrorAction Stop
+    }
+    
+    [Win32.PowerManagement]::PreventSleep($Continuous)
+  } catch {
+    # Silently fail in stealth mode - don't log errors
+    if (-not $script:StealthMode) {
+      Write-Message -LogMessage "ExecutionState API failed: $($_.Exception.Message)" -Type "Warning" -Category "System"
+    }
+  }
+}
+
+
+function Move-MouseStealth {
+  <#
+    .SYNOPSIS
+    Moves mouse cursor using low-level SetCursorPos API (stealth mode).
+    .DESCRIPTION
+    Uses Win32 SetCursorPos API directly, which is less detectable than .NET Cursor.Position.
+    Moves mouse by small increments to appear more natural.
+    .OUTPUTS
+    None
+  #>
+  
+  [CmdletBinding()]
+  param()
+  
+  try {
+    if (-not ("Win32.MouseStealth" -as [type])) {
+      Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace Win32 {
+    public static class MouseStealth {
+        [DllImport("user32.dll")]
+        public static extern bool SetCursorPos(int X, int Y);
+        
+        [DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out POINT lpPoint);
+        
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT {
+            public int X;
+            public int Y;
+        }
+        
+        public static int[] GetCurrentPos() {
+            POINT p;
+            GetCursorPos(out p);
+            return new int[] { p.X, p.Y };
+        }
+    }
+}
+"@ -ErrorAction Stop
+    }
+    
+    # Get current position
+    $currentPos = [Win32.MouseStealth]::GetCurrentPos()
+    $currentX = $currentPos[0]
+    $currentY = $currentPos[1]
+    
+    # Move by small random offset (1-5 pixels) - more natural than large jumps
+    $offsetX = Get-Random -Minimum -5 -Maximum 6
+    $offsetY = Get-Random -Minimum -5 -Maximum 6
+    
+    # Ensure at least 1 pixel movement
+    if ($offsetX -eq 0 -and $offsetY -eq 0) { $offsetX = 1 }
+    
+    $newX = $currentX + $offsetX
+    $newY = $currentY + $offsetY
+    
+    # Use low-level API
+    [Win32.MouseStealth]::SetCursorPos($newX, $newY) | Out-Null
+    
+    # Only log if not in stealth mode
+    if (-not $script:StealthMode) {
+      Write-Message -LogMessage (Get-Text -Category "Mouse" -Key "MouseMoving" -Arguments $currentX, $currentY, $newX, $newY) -Type "Info" -Category "Mouse"
+    }
+  } catch {
+    # Silently fail in stealth mode
+    if (-not $script:StealthMode) {
+      Write-Message -LogMessage (Get-Text -Category "Mouse" -Key "MouseMoveFailed" -Arguments $_) -Type "Critical" -Category "Mouse"
+    }
+  }
+}
+
+
+function Get-RandomIntervalStealth {
+  <#
+    .SYNOPSIS
+    Generates randomized interval with better distribution (stealth mode).
+    .DESCRIPTION
+    Uses exponential-like distribution with jitter to avoid predictable patterns.
+    .PARAMETER Min
+    Minimum interval in seconds.
+    .PARAMETER Max
+    Maximum interval in seconds.
+    .OUTPUTS
+    [int] Randomized interval in seconds.
+  #>
+  
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [int]$Min,
+    
+    [Parameter(Mandatory = $true)]
+    [int]$Max
+  )
+  
+  # Base interval with some randomization
+  $base = Get-Random -Minimum $Min -Maximum $Max
+  
+  # Add jitter (-10 to +20 seconds) for more natural timing
+  $jitter = Get-Random -Minimum -10 -Maximum 21
+  
+  # Occasionally add longer pauses (10% chance of +30-60s)
+  if ((Get-Random -Minimum 1 -Maximum 11) -eq 1) {
+    $jitter += Get-Random -Minimum 30 -Maximum 61
+  }
+  
+  # Ensure we don't go below minimum
+  return [Math]::Max($Min, $base + $jitter)
+}
+
+
+function Send-KeyPressStealth {
+  <#
+    .SYNOPSIS
+    Sends keypress with enhanced stealth (masked dwExtraInfo).
+    .DESCRIPTION
+    Uses SendInput with non-zero dwExtraInfo to reduce detection signature.
+    Only used as fallback when SetThreadExecutionState isn't sufficient.
+    .PARAMETER Key
+    Virtual key code to send.
+    .OUTPUTS
+    None
+  #>
+  
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Key
+  )
+  
+  try {
+    if (-not ("Win32.KeyboardStealth" -as [type])) {
+      Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace Win32 {
+    public static class KeyboardStealth {
+        [StructLayout(LayoutKind.Sequential)]
+        struct INPUT {
+            public uint type;
+            public InputUnion U;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        struct InputUnion {
+            [FieldOffset(0)]
+            public KEYBDINPUT ki;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct KEYBDINPUT {
+            public ushort wVk;
+            public ushort wScan;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+        const uint INPUT_KEYBOARD = 1;
+        const uint KEYEVENTF_KEYUP = 0x0002;
+
+        public static void SendVirtualKey(ushort vk) {
+            // Use random non-zero dwExtraInfo to mask automated input signature
+            Random rnd = new Random();
+            IntPtr extraInfo = (IntPtr)rnd.Next(0x1000, 0x7FFFFFFF);
+            
+            var down = new INPUT {
+                type = INPUT_KEYBOARD,
+                U = new InputUnion {
+                    ki = new KEYBDINPUT {
+                        wVk = vk,
+                        wScan = 0,
+                        dwFlags = 0,
+                        time = 0,
+                        dwExtraInfo = extraInfo
+                    }
+                }
+            };
+            var up = new INPUT {
+                type = INPUT_KEYBOARD,
+                U = new InputUnion {
+                    ki = new KEYBDINPUT {
+                        wVk = vk,
+                        wScan = 0,
+                        dwFlags = KEYEVENTF_KEYUP,
+                        time = 0,
+                        dwExtraInfo = extraInfo
+                    }
+                }
+            };
+            INPUT[] inputs = new INPUT[] { down, up };
+            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+    }
+}
+"@ -ErrorAction Stop
+    }
+    
+    # Parse key to virtual key code
+    $vk = switch -Regex ($Key) {
+      '^\{F(\d{1,2})\}$' { [ushort](0x70 + ([int]$Matches[1] - 1)) }
+      '^\{SCROLLLOCK\}$' { [ushort]0x91 }
+      '^\{NUMLOCK\}$' { [ushort]0x90 }
+      '^\{CAPSLOCK\}$' { [ushort]0x14 }
+      default { [ushort]0x91 } # Default to SCROLLLOCK
+    }
+    
+    [Win32.KeyboardStealth]::SendVirtualKey($vk)
+  } catch {
+    # Silently fail in stealth mode
+    if (-not $script:StealthMode) {
+      Write-Message -LogMessage "Stealth keypress failed: $($_.Exception.Message)" -Type "Warning" -Category "KeyPress"
+    }
+  }
+}
+
+
+function Show-Banner {
+  <#
+    .SYNOPSIS
+    Displays the WakeyWindows ASCII art banner.
+    .DESCRIPTION
+    Shows a stylized banner with version information.
+    .PARAMETER Version
+    Version string to display.
+    .PARAMETER Stealth
+    If true, shows minimal output.
+    .OUTPUTS
+    None
+  #>
+  
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $false)]
+    [string]$Version = "1.0.0",
+    
+    [Parameter(Mandatory = $false)]
+    [switch]$Stealth
+  )
+  
+  if ($Stealth) {
+    # Minimal output in stealth mode
+    return
+  }
+  
+  $banner = @"
+
+  ██╗    ██╗ █████╗ ██╗  ██╗███████╗██╗   ██╗
+  ██║    ██║██╔══██╗██║ ██╔╝██╔════╝╚██╗ ██╔╝
+  ██║ █╗ ██║███████║█████╔╝ █████╗   ╚████╔╝ 
+  ██║███╗██║██╔══██║██╔═██╗ ██╔══╝    ╚██╔╝  
+  ╚███╔███╔╝██║  ██║██║  ██╗███████╗   ██║   
+   ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝   
+                    ██╗    ██╗██╗███╗   ██╗██████╗  ██████╗ ██╗    ██╗███████╗
+                    ██║    ██║██║████╗  ██║██╔══██╗██╔═══██╗██║    ██║██╔════╝
+                    ██║ █╗ ██║██║██╔██╗ ██║██║  ██║██║   ██║██║ █╗ ██║███████╗
+                    ██║███╗██║██║██║╚██╗██║██║  ██║██║   ██║██║███╗██║╚════██║
+                    ╚███╔███╔╝██║██║ ╚████║██████╔╝╚██████╔╝╚███╔███╔╝███████║
+                     ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚══╝╚══╝ ╚══════╝
+"@
+
+  $info = @"
+                              ☕ Keep your PC awake and caffeinated ☕
+                                        Version: $Version
+                         ─────────────────────────────────────────────
+"@
+
+  Write-Host $banner -ForegroundColor Cyan
+  Write-Host $info -ForegroundColor DarkGray
+  Write-Host ""
+}
