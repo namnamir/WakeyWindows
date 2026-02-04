@@ -95,6 +95,9 @@ function Write-Message {
     [string]$Type = "Info",
 
     [Parameter(Mandatory = $false)]
+    [string]$Category,
+
+    [Parameter(Mandatory = $false)]
     [switch]$NoColor,
 
     [Parameter(Mandatory = $false)]
@@ -143,13 +146,32 @@ function Write-Message {
 
   # Console output (optional)
   if ($script:Config.LogWriteToConsole) {
+    # Determine base color from category (purpose)
+    $baseColor = switch ($Category) {
+      "General"      { 'DarkGreen' }
+      "System"       { 'DarkGreen' }
+      "KeepAlive"    { 'DarkGreen' }
+      "CMDlet"       { 'DarkGreen' }
+      "WorkingHours" { 'DarkGreen' }
+      "Activity"     { 'Cyan' }
+      "Performance"  { 'DarkYellow' }
+      "KeyPress"     { 'Blue' }
+      "Mouse"        { 'Blue' }
+      "Brightness"   { 'Magenta' }
+      "Energy"       { 'Magenta' }
+      "Webpage"      { 'Gray' }
+      "Application"  { 'Gray' }
+      default        { 'White' }
+    }
+
+    # Override with severity-based colors when applicable
     $fg = switch ($Type) {
-      "Info"     { 'Green' }
       "Warning"  { 'Yellow' }
       "Error"    { 'Red' }
       "Critical" { 'Magenta' }
-      default     { 'White' }
+      default    { $baseColor }
     }
+
     if ($NoColor) { $fg = 'White' }
     Write-Host $FormattedMessage -ForegroundColor $fg
   }
@@ -237,16 +259,16 @@ function Set-TimeWaitMax-FromPowerStatus {
       $systemMax = $timeout - 5
       $configMax = $script:Config.TimeWaitMax
       $script:Config.TimeWaitMax = [Math]::Min($systemMax, $configMax)
-      Write-Message -LogMessage (Get-Text -Category "System" -Key "TimeWaitMaxSet" -Arguments $script:Config.TimeWaitMax, $source) -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "System" -Key "TimeWaitMaxSet" -Arguments $script:Config.TimeWaitMax, $source) -Type "Info" -Category "System"
 
       # Update last known values
       $script:LastPowerType = $type
       $script:LastTimeout   = $timeout
     } else {
-      Write-Message -LogMessage (Get-Text -Category "System" -Key "SleepTimeoutFailed" -Arguments $type, $source) -Type "Warning"
+      Write-Message -LogMessage (Get-Text -Category "System" -Key "SleepTimeoutFailed" -Arguments $type, $source) -Type "Warning" -Category "System"
     }
   } else {
-    Write-Message -LogMessage (Get-Text -Category "System" -Key "NoPowerChange" -Arguments $type, $timeout) -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "System" -Key "NoPowerChange" -Arguments $type, $timeout) -Type "Info" -Category "System"
   }
 }
 
@@ -639,7 +661,7 @@ namespace Win32 {
     # Initialize the last mouse position if not already set
     if (-not $script:LastMousePosition) {
       $script:LastMousePosition = [System.Windows.Forms.Cursor]::Position
-      Write-Message -LogMessage (Get-Text -Category "Activity" -Key "TrackingStarted") -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Activity" -Key "TrackingStarted") -Type "Info" -Category "Activity"
       return $true
     }
 
@@ -835,7 +857,7 @@ namespace Win32 {
     if ($activityStatus.GestureType -ne "None") {
       $logMessage += " [Gesture: $($activityStatus.GestureType)]"
     }
-    Write-Message -LogMessage $logMessage -Type "Info"
+    Write-Message -LogMessage $logMessage -Type "Info" -Category "Activity"
 
     # Detect user activity with confidence threshold
     if ($activityStatus.IsActive -and $activityStatus.Confidence -ge 20) {
@@ -845,12 +867,12 @@ namespace Win32 {
       $script:LastWindowTitle = $CurrentWindowTitle
 
       # Log activity with enhanced details
-      Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityDetected" -Arguments $activityStatus.ActivityType, ($activityStatus.Reasons -join ' | '), (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $script:Config.TimeWaitMax))) -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityDetected" -Arguments $activityStatus.ActivityType, ($activityStatus.Reasons -join ' | '), (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $script:Config.TimeWaitMax))) -Type "Info" -Category "Activity"
 
       # Reset brightness and energy efficiency if configured
       if ($script:Config.BrightnessFlag -and $script:BrightnessState -ne "Normal") {
           $script:BrightnessState = "Normal"
-          Write-Message -LogMessage (Get-Text -Category "Energy" -Key "RestoringNormal") -Type "Info"
+          Write-Message -LogMessage (Get-Text -Category "Energy" -Key "RestoringNormal") -Type "Info" -Category "Energy"
           Set-EnergyEfficiencyMode -Mode "Normal"
       }
       return $true
@@ -864,13 +886,13 @@ namespace Win32 {
         $script:BrightnessState -eq "Normal"
       ) {
           $script:BrightnessState = "Dimmed"
-          Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ApplyingMeasures" -Arguments ($activityStatus.Reasons -join ' | ')) -Type "Warning"
+          Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ApplyingMeasures" -Arguments ($activityStatus.Reasons -join ' | ')) -Type "Warning" -Category "Energy"
           Set-EnergyEfficiencyMode -Mode $script:Config.EnergyEfficiencyMode
       }
       return $false
     }
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityCheckError" -Arguments $_.Exception.Message) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityCheckError" -Arguments $_.Exception.Message) -Type "Critical" -Category "Activity"
     return $false
   }
   finally {
@@ -1012,7 +1034,7 @@ function Test-TrackpadActivity {
 
     return [PSCustomObject]$trackpadActivity
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "TrackpadActivityError" -Arguments $_.Exception.Message) -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "TrackpadActivityError" -Arguments $_.Exception.Message) -Type "Warning" -Category "Activity"
     return [PSCustomObject]@{
       IsTrackpad = $false
       GestureType = "None"
@@ -1100,7 +1122,7 @@ function Get-SystemActivityMetrics {
 
     return [PSCustomObject]$metrics
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "SystemMetricsError" -Arguments $_.Exception.Message) -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "SystemMetricsError" -Arguments $_.Exception.Message) -Type "Warning" -Category "Activity"
     return [PSCustomObject]@{
       CpuUsage = 0
       MemoryUsage = 0
@@ -1160,9 +1182,9 @@ function Stop-ActivityDetection {
     if ($script:Config.BrightnessFlag) {
       try {
         Set-EnergyEfficiencyMode -Mode "Normal"
-        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "SettingsRestored") -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "SettingsRestored") -Type "Info" -Category "Energy"
       } catch {
-        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "SettingsRestoreFailed" -Arguments $_.Exception.Message) -Type "Warning"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "SettingsRestoreFailed" -Arguments $_.Exception.Message) -Type "Warning" -Category "Energy"
       }
     }
 
@@ -1170,9 +1192,9 @@ function Stop-ActivityDetection {
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
 
-    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityDetectionStopped") -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityDetectionStopped") -Type "Info" -Category "Activity"
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Performance" -Key "CleanupError" -Arguments $_.Exception.Message) -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Performance" -Key "CleanupError" -Arguments $_.Exception.Message) -Type "Warning" -Category "Performance"
   }
 }
 
@@ -1261,7 +1283,7 @@ function Test-ActivityPattern {
     $pattern.IsHumanLike = $pattern.Confidence -ge 50
     return [PSCustomObject]$pattern
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityPatternError" -Arguments $_.Exception.Message) -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Activity" -Key "ActivityPatternError" -Arguments $_.Exception.Message) -Type "Warning" -Category "Activity"
     return [PSCustomObject]@{
       IsHumanLike = $false
       Confidence = 0
@@ -1440,7 +1462,7 @@ function Test-WorkingHours {
 
     return [PSCustomObject]$status
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorCheckingWorkingHours" -Arguments $_.Exception.Message) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorCheckingWorkingHours" -Arguments $_.Exception.Message) -Type "Critical" -Category "WorkingHours"
     return [PSCustomObject]@{
       ShouldRun = $false
       Reason = (Get-Text -Category "WorkingHours" -Key "ErrorCheckingWorkingHoursReason")
@@ -1514,7 +1536,7 @@ function Optimize-ScriptPerformance {
     # Adjust cooldown based on memory usage
     if ($resourceUsage.WorkingSet -gt 100MB) {
       $script:Config.TimeCooldown = [Math]::Min($script:Config.TimeCooldown + 1, 10)
-      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "CooldownIncreased" -Arguments $script:Config.TimeCooldown) -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "CooldownIncreased" -Arguments $script:Config.TimeCooldown) -Type "Info" -Category "Performance"
     } elseif ($resourceUsage.WorkingSet -lt 50MB) {
       $script:Config.TimeCooldown = [Math]::Max($script:Config.TimeCooldown - 1, 1)
     }
@@ -1523,12 +1545,12 @@ function Optimize-ScriptPerformance {
     if ($resourceUsage.GCMemory -gt 50MB) {
       [System.GC]::Collect()
       [System.GC]::WaitForPendingFinalizers()
-      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "GarbageCollectionPerformed") -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "GarbageCollectionPerformed") -Type "Info" -Category "Performance"
     }
 
     # Log resource usage periodically
     if ($script:ActivityCheckCount -and $script:ActivityCheckCount % 100 -eq 0) {
-      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "ResourceUsage" -Arguments ([Math]::Round($resourceUsage.WorkingSet / 1MB, 2)), $resourceUsage.ThreadCount, $resourceUsage.HandleCount) -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Performance" -Key "ResourceUsage" -Arguments ([Math]::Round($resourceUsage.WorkingSet / 1MB, 2)), $resourceUsage.ThreadCount, $resourceUsage.HandleCount) -Type "Info" -Category "Performance"
     }
   } catch {
     # Ignore optimization errors
@@ -1682,7 +1704,7 @@ function Get-WorkingHoursInfo {
 
     return [PSCustomObject]$info
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorGettingWorkingHoursInfo" -Arguments $_.Exception.Message) -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorGettingWorkingHoursInfo" -Arguments $_.Exception.Message) -Type "Warning" -Category "WorkingHours"
     return [PSCustomObject]@{
       WorkingDays = @()
       WorkingHours = "Unknown"
@@ -1742,7 +1764,7 @@ function Test-Holiday {
       return $false
     }
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorCheckingHoliday" -Arguments $_.Exception.Message) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "WorkingHours" -Key "ErrorCheckingHoliday" -Arguments $_.Exception.Message) -Type "Critical" -Category "WorkingHours"
     return $false
   }
 }
@@ -1772,7 +1794,7 @@ function Invoke-CMDlet {
 
   # Log execution information (if logging enabled)
   if ($Flag) {
-      Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Running" -Arguments $CMDlet) -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Running" -Arguments $CMDlet) -Type "Info" -Category "CMDlet"
   }
 
   try {
@@ -1781,14 +1803,14 @@ function Invoke-CMDlet {
 
     # Log success if logging is enabled
     if ($Flag) {
-        Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Completed" -Arguments $CMDlet) -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Completed" -Arguments $CMDlet) -Type "Info" -Category "CMDlet"
     }
 
     # Return the output
     return $Output
   } catch {
       # Log the error
-      Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Error" -Arguments $CMDlet, $_.Exception.Message) -Type "Critical"
+      Write-Message -LogMessage (Get-Text -Category "CMDlet" -Key "Error" -Arguments $CMDlet, $_.Exception.Message) -Type "Critical" -Category "CMDlet"
   }
 }
 
@@ -1814,7 +1836,7 @@ function Send-KeyPress {
 
   # Validate key is not empty
   if ([string]::IsNullOrWhiteSpace($Key)) {
-    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyEmptyOrNull") -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyEmptyOrNull") -Type "Warning" -Category "KeyPress"
     return
   }
 
@@ -1903,7 +1925,7 @@ namespace Win32 {
         $vk = [ushort](0x70 + ($fn - 1))
         
         # Log the event
-        Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyGoingToBePressedWin32" -Arguments $Key, $fn) -Type "Info" -Level 2
+        Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyGoingToBePressedWin32" -Arguments $Key, $fn) -Type "Info" -Level 2 -Category "KeyPress"
         
         # Send using Win32 SendInput
         [Win32.KeyboardInput]::SendVirtualKey($vk)
@@ -1912,7 +1934,7 @@ namespace Win32 {
     }
 
     # Log the event
-    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyGoingToBePressed" -Arguments $Key) -Type "Info" -Level 2
+    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeyGoingToBePressed" -Arguments $Key) -Type "Info" -Level 2 -Category "KeyPress"
 
     # Flush any pending keystrokes for reliability
     [System.Windows.Forms.SendKeys]::Flush()
@@ -1921,9 +1943,9 @@ namespace Win32 {
     [System.Windows.Forms.SendKeys]::SendWait($Key)
 
   } catch [System.Reflection.ReflectionTypeLoadException] {
-    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "AssemblyLoadFailed" -Arguments $_.Exception.Message) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "AssemblyLoadFailed" -Arguments $_.Exception.Message) -Type "Critical" -Category "KeyPress"
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeySendFailed" -Arguments $Key, $_.Exception.Message) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "KeyPress" -Key "KeySendFailed" -Arguments $Key, $_.Exception.Message) -Type "Critical" -Category "KeyPress"
   }
 }
 
@@ -1957,12 +1979,12 @@ function Move-MouseRandom {
     $RandomY = Get-Random -Minimum $MinOffset -Maximum $MaxOffset
 
     # Log the event
-    Write-Message -LogMessage (Get-Text -Category "Mouse" -Key "MouseMoving" -Arguments $Position.X, $Position.Y, $RandomX, $RandomY) -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Mouse" -Key "MouseMoving" -Arguments $Position.X, $Position.Y, $RandomX, $RandomY) -Type "Info" -Category "Mouse"
 
     # Set the new position of the mouse cursor
     [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point ($RandomX, $RandomY)
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Mouse" -Key "MouseMoveFailed" -Arguments $_) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Mouse" -Key "MouseMoveFailed" -Arguments $_) -Type "Critical" -Category "Mouse"
   }
 }
 
@@ -1995,18 +2017,18 @@ function Start-AppSession {
     Start-Process $Application
 
     # Log the event with calculated wait time
-    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppWillOpen" -Arguments $Application, (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $WaitTime)), (Get-Date).AddSeconds($WaitTime)) -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppWillOpen" -Arguments $Application, (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $WaitTime)), (Get-Date).AddSeconds($WaitTime)) -Type "Info" -Category "Application"
 
     # Wait for the specified time
     Start-Sleep $WaitTime
 
     # Log the event
-    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppBeingClosed" -Arguments $Application) -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppBeingClosed" -Arguments $Application) -Type "Info" -Category "Application"
 
     # Close the application
     Stop-Process -Name "*$Application*"
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppError" -Arguments $_) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Application" -Key "AppError" -Arguments $_) -Type "Critical" -Category "Application"
   }
 }
 
@@ -2041,7 +2063,7 @@ function Start-EdgeSession {
     Start-Process microsoft-edge:$Webpage
 
     # Log the event with calculated wait time
-    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageWillOpen" -Arguments $Webpage, (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $WaitTime)), $CloseTime) -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageWillOpen" -Arguments $Webpage, (Convert-TimeSpanToHumanReadable (New-TimeSpan -Seconds $WaitTime)), $CloseTime) -Type "Info" -Category "Webpage"
 
     # Scroll the page while waiting for the closing time
     while ($CloseTime -gt (Get-Date)) {
@@ -2055,9 +2077,9 @@ function Start-EdgeSession {
     [System.Windows.Forms.SendKeys]::SendWait("^{w}") # Send Ctrl+w to close active tab
 
     # Log the event
-    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageBeingClosed" -Arguments $Webpage) -Type "Info"
+    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageBeingClosed" -Arguments $Webpage) -Type "Info" -Category "Webpage"
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageError" -Arguments $Webpage) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Webpage" -Key "WebpageError" -Arguments $Webpage) -Type "Critical" -Category "Webpage"
   }
 }
 
@@ -2108,7 +2130,7 @@ function Set-ScreenBrightness {
     $monitors = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue
     
     if (-not $monitors) {
-      Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "NoMonitorsFound") -Type "Warning"
+      Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "NoMonitorsFound") -Type "Warning" -Category "Brightness"
       return
     }
 
@@ -2119,7 +2141,7 @@ function Set-ScreenBrightness {
       $currentBrightness = $monitor.CurrentBrightness
       
       if ($Level -ne $currentBrightness) {
-        Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessAdjusting" -Arguments $currentBrightness, $Level) -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessAdjusting" -Arguments $currentBrightness, $Level) -Type "Info" -Category "Brightness"
 
         if ($SmoothTransition -or $script:Config.BrightnessSmoothTransition) {
           # Smooth transition
@@ -2149,13 +2171,13 @@ function Set-ScreenBrightness {
               Invoke-CimMethod -InputObject $brightnessMethods -MethodName "WmiSetBrightness" -Arguments @{Timeout=0; Brightness=$Level} | Out-Null
             }
           } catch {
-            Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessSetFailed") -Type "Warning"
+            Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessSetFailed") -Type "Warning" -Category "Brightness"
           }
         }
       }
     }
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessError" -Arguments $_.Exception.Message) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "BrightnessError" -Arguments $_.Exception.Message) -Type "Critical" -Category "Brightness"
   }
 }
 
@@ -2209,12 +2231,12 @@ function Set-MonitorPower {
     $result = [MonitorPower]::SendMessage($desktopWindow, [MonitorPower]::WM_SYSCOMMAND, [MonitorPower]::SC_MONITORPOWER, [IntPtr]$command)
     
     if ($result -eq 0) {
-      Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerSet" -Arguments $State) -Type "Info"
+      Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerSet" -Arguments $State) -Type "Info" -Category "Energy"
     } else {
-      Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerFailed" -Arguments $State) -Type "Warning"
+      Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerFailed" -Arguments $State) -Type "Warning" -Category "Energy"
     }
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerError" -Arguments $_.Exception.Message) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Energy" -Key "MonitorPowerError" -Arguments $_.Exception.Message) -Type "Critical" -Category "Energy"
   }
 }
 
@@ -2263,7 +2285,7 @@ function Get-MonitorInfo {
     
     return $monitors
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "MonitorInfoError" -Arguments $_.Exception.Message) -Type "Warning"
+    Write-Message -LogMessage (Get-Text -Category "Brightness" -Key "MonitorInfoError" -Arguments $_.Exception.Message) -Type "Warning" -Category "Brightness"
     return @()
   }
 }
@@ -2297,7 +2319,7 @@ function Set-EnergyEfficiencyMode {
           Set-ScreenBrightness -Level $script:Config.BrightnessInitial -SmoothTransition:$script:Config.BrightnessSmoothTransition
         }
         Set-MonitorPower -State "On"
-        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetNormal") -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetNormal") -Type "Info" -Category "Energy"
       }
       
       "Dim" {
@@ -2305,22 +2327,22 @@ function Set-EnergyEfficiencyMode {
         if ($script:Config.BrightnessFlag) {
           Set-ScreenBrightness -Level $script:Config.BrightnessMin -SmoothTransition:$script:Config.BrightnessSmoothTransition
         }
-        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetDim") -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetDim") -Type "Info" -Category "Energy"
       }
       
       "Sleep" {
         # Put monitors to sleep
         Set-MonitorPower -State "Standby"
-        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetSleep") -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetSleep") -Type "Info" -Category "Energy"
       }
       
       "Off" {
         # Turn off monitors completely
         Set-MonitorPower -State "Off"
-        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetOff") -Type "Info"
+        Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetOff") -Type "Info" -Category "Energy"
       }
     }
   } catch {
-    Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetError" -Arguments $_.Exception.Message) -Type "Critical"
+    Write-Message -LogMessage (Get-Text -Category "Energy" -Key "ModeSetError" -Arguments $_.Exception.Message) -Type "Critical" -Category "Energy"
   }
 }
