@@ -1,0 +1,33 @@
+# Build the Native (C#) app and attach the exe to a GitHub Release.
+# Trigger: push a tag like v1.0.0 (e.g. git tag v1.0.0 && git push origin v1.0.0)
+# The Version file at repo root should match the tag (e.g. 1.0.0) for "Check for updates" to work.
+
+name: Release Native Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish Native app
+        run: dotnet publish Native/WakeyNative.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o Native/publish
+
+      - name: Create Release and upload exe
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Native/publish/PowerManager.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

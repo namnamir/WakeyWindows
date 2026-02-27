@@ -1,4 +1,4 @@
-﻿function Get-Text {
+function Get-Text {
   <#
     .SYNOPSIS
     Retrieves a localized text string from the Texts.ps1 file.
@@ -2520,8 +2520,9 @@ function Get-RandomIntervalStealth {
     $jitter += Get-Random -Minimum 30 -Maximum 61
   }
   
-  # Ensure we don't go below minimum
-  return [Math]::Max($Min, $base + $jitter)
+  # Clamp to [Min, Max] so the interval never exceeds the configured maximum
+  $interval = $base + $jitter
+  return [Math]::Max($Min, [Math]::Min($Max, $interval))
 }
 
 

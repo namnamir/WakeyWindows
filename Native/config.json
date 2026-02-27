@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "intervalMinSeconds": 60,
+  "intervalMaxSeconds": 120,
+  "detectUserActivity": true,
+  "activityPauseSeconds": 120,
+  "mouseMovementThreshold": 10,
+  "idleTimeoutSeconds": 30,
+  "useWorkingHours": false,
+  "workingHoursStart": "08:30",
+  "workingHoursEnd": "17:00",
+  "workingDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+  "showTrayIcon": true,
+  "showBalloonTips": false,
+  "startMinimized": true,
+  "startWithWindows": false,
+  "keepDisplayOn": true,
+  "updateCheckUrl": "https://raw.githubusercontent.com/namnamir/WakeyWindows/main/Version"
+}

@@ -1,3 +1,13 @@
 *.log
 \log
 \logs
+Logs/
+
+# C# Native build artifacts
+Native/bin/
+Native/obj/
+Native/publish/
+Native/*.user
+*.exe
+*.dll
+*.pdb

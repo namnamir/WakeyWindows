@@ -130,10 +130,11 @@ if ($script:StealthMode) {
     $script:Config.LogVerbosity = 0
     $script:Config.LogWriteToConsole = $false
     $script:Config.LogWriteToFile = $false
+    $script:Config.LogFlag = $false
+  } else {
+    # User explicitly passed -LogVerbosity: allow logging so the override is effective
+    $script:Config.LogFlag = $true
   }
-  
-  # Disable activity detection logging
-  $script:Config.LogFlag = $false
   
   # Disable brightness control (reduces API calls)
   $script:Config.BrightnessFlag = $false

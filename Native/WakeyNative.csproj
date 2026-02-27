@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    
+    <!-- ============================================================== -->
+    <!-- CUSTOMIZE THESE VALUES BEFORE BUILDING                         -->
+    <!-- ============================================================== -->
+    <AssemblyName>PowerManager</AssemblyName>
+    <RootNamespace>PowerManager</RootNamespace>
+    <Product>Power Manager</Product>
+    <Description>System power management utility</Description>
+    <Company>Microsoft Corporation</Company>
+    <Copyright>Copyright © 2026</Copyright>
+    <Version>1.0.0</Version>
+    
+    <!-- Set to true for single-file deployment -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    
+    <!-- Trim unused code for smaller size -->
+    <PublishTrimmed>false</PublishTrimmed>
+    
+    <!-- Application icon - place your .ico file in the Native folder -->
+    <!-- Uncomment and set path to your icon file -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>
