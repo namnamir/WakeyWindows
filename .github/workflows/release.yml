@@ -27,12 +27,22 @@ jobs:
       - name: Publish Native app
         run: dotnet publish Native/WakeyNative.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o Native/publish
 
+      - name: Verify exe and list publish folder
+        run: |
+          if (-not (Test-Path "Native/publish/PowerManager.exe")) {
+            Write-Error "PowerManager.exe not found. Contents of Native/publish:"
+            Get-ChildItem -Path "Native/publish" -Recurse | ForEach-Object { $_.FullName }
+            exit 1
+          }
+          Get-ChildItem "Native/publish" | ForEach-Object { $_.Name }
+
       - name: Create Release and upload exe
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          files: Native/publish/PowerManager.exe
+          files: |
+            Native/publish/PowerManager.exe
           generate_release_notes: true
           fail_on_unmatched_files: true
         env:
