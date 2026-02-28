@@ -1,0 +1,49 @@
+# One-click release: update Version file, commit, and push a tag.
+# The tag push triggers "Release Native Build", which builds the exe and creates the GitHub Release.
+# Usage: Actions → Prepare Release → Run workflow → enter version (e.g. 1.1.1) → Run.
+
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.1.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Version file
+        run: |
+          echo -n "${{ inputs.version }}" > Version
+          cat Version
+
+      - name: Update Native project version
+        run: |
+          sed -i 's/<Version>.*<\/Version>/<Version>${{ inputs.version }}<\/Version>/' Native/WakeyNative.csproj
+          grep '<Version>' Native/WakeyNative.csproj
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Version Native/WakeyNative.csproj
+          git diff --staged --quiet || git commit -m "Release ${{ inputs.version }}"
+          git push origin main
+
+      - name: Create and push tag
+        run: |
+          git tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"

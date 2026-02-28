@@ -1,6 +1,6 @@
 # Build the Native (C#) app and attach the exe to a GitHub Release.
-# Trigger: push a tag like v1.0.0 (e.g. git tag v1.0.0 && git push origin v1.0.0)
-# The Version file at repo root should match the tag (e.g. 1.0.0) for "Check for updates" to work.
+# Trigger: push a tag v* (usually from "Prepare Release" workflow — no manual git needed).
+# Version file and Native/WakeyNative.csproj are updated by Prepare Release before tagging.
 
 name: Release Native Build
 
@@ -43,7 +43,7 @@ jobs:
           name: Release ${{ github.ref_name }}
           files: |
             Native/publish/PowerManager.exe
-          generate_release_notes: true
+          generate_release_notes: false
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
