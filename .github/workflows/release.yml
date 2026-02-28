@@ -9,6 +9,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write   # required to create release and upload assets
+
 jobs:
   build-and-release:
     runs-on: windows-latest
@@ -27,7 +30,10 @@ jobs:
       - name: Create Release and upload exe
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           files: Native/publish/PowerManager.exe
           generate_release_notes: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
