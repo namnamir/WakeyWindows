@@ -1,6 +1,7 @@
-# One-click release: update Version file, commit, and push a tag.
-# The tag push triggers "Release Native Build", which builds the exe and creates the GitHub Release.
-# Usage: Actions → Prepare Release → Run workflow → enter version (e.g. 1.1.1) → Run.
+# One-click release: bump version, commit, tag, build exe, create GitHub Release.
+# GitHub Actions blocks cross-workflow triggers when GITHUB_TOKEN pushes a tag,
+# so the build and release steps live here as a second job rather than in release.yml.
+# Usage: Actions → Prepare Release → Run workflow → enter version (e.g. 1.1.3) → Run.
 
 name: Prepare Release
 
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version number (e.g. 1.1.1)'
+        description: 'Version number (e.g. 1.1.3)'
         required: true
         type: string
 
@@ -47,3 +48,40 @@ jobs:
         run: |
           git tag "v${{ inputs.version }}"
           git push origin "v${{ inputs.version }}"
+
+  build-and-release:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish Native app
+        run: dotnet publish Native/WakeyNative.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o Native/publish
+
+      - name: Verify exe
+        run: |
+          if (-not (Test-Path "Native/publish/PowerManager.exe")) {
+            Write-Error "PowerManager.exe not found. Contents of Native/publish:"
+            Get-ChildItem -Path "Native/publish" -Recurse | ForEach-Object { $_.FullName }
+            exit 1
+          }
+          Get-ChildItem "Native/publish" | ForEach-Object { $_.Name }
+
+      - name: Create Release and upload exe
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Release v${{ inputs.version }}
+          files: Native/publish/PowerManager.exe
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

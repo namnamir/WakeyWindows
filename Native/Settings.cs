@@ -63,6 +63,10 @@ namespace PowerManager
         [JsonPropertyName("keepDisplayOn")]
         public bool KeepDisplayOn { get; set; } = true;
 
+        // Simulation method: "api_only" (SetThreadExecutionState only) or "mouse_jiggle" (also moves mouse via SendInput)
+        [JsonPropertyName("simulationMethod")]
+        public string SimulationMethod { get; set; } = "mouse_jiggle";
+
         // Optional URL to check for newer versions (plain text version string)
         [JsonPropertyName("updateCheckUrl")]
         public string? UpdateCheckUrl { get; set; } = "https://raw.githubusercontent.com/namnamir/WakeyWindows/main/Version";

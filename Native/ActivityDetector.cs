@@ -31,6 +31,7 @@ namespace PowerManager
 
         private Point _lastMousePosition;
         private DateTime _lastActivityTime;
+        private DateTime _lastJiggleTime = DateTime.MinValue;
         private readonly Settings _settings;
 
         public ActivityDetector(Settings settings)
@@ -58,6 +59,16 @@ namespace PowerManager
         }
 
         /// <summary>
+        /// Call this immediately after a jiggle so the activity detector ignores
+        /// the synthetic input event we just generated.
+        /// </summary>
+        public void MarkAsJiggle()
+        {
+            _lastJiggleTime = DateTime.Now;
+            _lastMousePosition = GetCurrentMousePosition();
+        }
+
+        /// <summary>
         /// Checks if user is currently active (working)
         /// </summary>
         public bool IsUserActive()
@@ -65,9 +76,12 @@ namespace PowerManager
             if (!_settings.DetectUserActivity)
                 return false;
 
+            // Don't mistake our own jiggle for real user activity
+            bool recentJiggle = (DateTime.Now - _lastJiggleTime).TotalSeconds < 3;
+
             // Check system-wide idle time
             int idleSeconds = GetIdleTimeSeconds();
-            if (idleSeconds < _settings.IdleTimeoutSeconds)
+            if (idleSeconds < _settings.IdleTimeoutSeconds && !recentJiggle)
             {
                 _lastActivityTime = DateTime.Now;
                 return true;

@@ -15,5 +15,6 @@
   "startMinimized": true,
   "startWithWindows": false,
   "keepDisplayOn": true,
+  "simulationMethod": "mouse_jiggle",
   "updateCheckUrl": "https://raw.githubusercontent.com/namnamir/WakeyWindows/main/Version"
 }

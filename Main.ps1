@@ -98,21 +98,21 @@ param(
 )
 
 # Load texts first (needed by modules)
-. .\Texts.ps1
+. "$PSScriptRoot\Texts.ps1"
 
 # Show help if requested
 if ($Help) {
-  . .\Modules.ps1
+  . "$PSScriptRoot\Modules.ps1"
   Show-ScriptHelp
   exit 0
 }
 
 # Load modules and configurations
-. .\Modules.ps1
-. .\Config.ps1
+. "$PSScriptRoot\Modules.ps1"
+. "$PSScriptRoot\Config.ps1"
 
 # Load version from file
-$script:Version = if (Test-Path ".\Version") { (Get-Content ".\Version" -Raw).Trim() } else { "1.0.0" }
+$script:Version = if (Test-Path "$PSScriptRoot\Version") { (Get-Content "$PSScriptRoot\Version" -Raw).Trim() } else { "1.0.0" }
 
 # Initialize stealth mode flag
 $script:StealthMode = $Stealth

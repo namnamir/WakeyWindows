@@ -158,11 +158,18 @@ namespace PowerManager
 
             // Perform keep-alive
             KeepAwake.PreventSleep(_settings.KeepDisplayOn);
+
+            if (_settings.SimulationMethod != "api_only")
+            {
+                MouseJiggler.Jiggle();
+                _activityDetector.MarkAsJiggle();
+            }
+
             _lastKeepAlive = DateTime.Now;
-            
+
             // Set next random interval
             SetNextInterval();
-            
+
             UpdateStatus("Active");
         }
 
