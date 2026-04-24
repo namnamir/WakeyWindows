@@ -51,7 +51,7 @@ namespace PowerManager
         public bool ShowTrayIcon { get; set; } = true;
 
         [JsonPropertyName("showBalloonTips")]
-        public bool ShowBalloonTips { get; set; } = false;
+        public bool ShowBalloonTips { get; set; } = true;
 
         [JsonPropertyName("startMinimized")]
         public bool StartMinimized { get; set; } = true;

@@ -26,9 +26,11 @@
     <!-- Trim unused code for smaller size -->
     <PublishTrimmed>false</PublishTrimmed>
     
-    <!-- Application icon - place your .ico file in the Native folder -->
-    <!-- Uncomment and set path to your icon file -->
+    <!-- Application icon -->
     <ApplicationIcon>app.ico</ApplicationIcon>
+
+    <!-- Application manifest: DPI awareness + compatibility declarations -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
