@@ -20,6 +20,14 @@ namespace PowerManager
         [JsonPropertyName("intervalMaxSeconds")]
         public int IntervalMaxSeconds { get; set; } = 120;
 
+        // Simulation method: "mouse_jiggle", "key_press", or "api_only"
+        [JsonPropertyName("simulationMethod")]
+        public string SimulationMethod { get; set; } = "mouse_jiggle";
+
+        // Keep display on
+        [JsonPropertyName("keepDisplayOn")]
+        public bool KeepDisplayOn { get; set; } = true;
+
         // User activity detection settings
         [JsonPropertyName("detectUserActivity")]
         public bool DetectUserActivity { get; set; } = true;
@@ -33,7 +41,7 @@ namespace PowerManager
         [JsonPropertyName("idleTimeoutSeconds")]
         public int IdleTimeoutSeconds { get; set; } = 30;
 
-        // Working hours (optional)
+        // Working hours
         [JsonPropertyName("useWorkingHours")]
         public bool UseWorkingHours { get; set; } = false;
 
@@ -46,7 +54,14 @@ namespace PowerManager
         [JsonPropertyName("workingDays")]
         public string[] WorkingDays { get; set; } = { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
 
-        // Stealth settings
+        // Holidays
+        [JsonPropertyName("skipHolidays")]
+        public bool SkipHolidays { get; set; } = false;
+
+        [JsonPropertyName("holidayCountryCode")]
+        public string HolidayCountryCode { get; set; } = "NL";
+
+        // Tray / notifications
         [JsonPropertyName("showTrayIcon")]
         public bool ShowTrayIcon { get; set; } = true;
 
@@ -59,15 +74,7 @@ namespace PowerManager
         [JsonPropertyName("startWithWindows")]
         public bool StartWithWindows { get; set; } = false;
 
-        // Keep display on
-        [JsonPropertyName("keepDisplayOn")]
-        public bool KeepDisplayOn { get; set; } = true;
-
-        // Simulation method: "api_only" (SetThreadExecutionState only) or "mouse_jiggle" (also moves mouse via SendInput)
-        [JsonPropertyName("simulationMethod")]
-        public string SimulationMethod { get; set; } = "mouse_jiggle";
-
-        // Optional URL to check for newer versions (plain text version string)
+        // Optional URL to check for newer versions
         [JsonPropertyName("updateCheckUrl")]
         public string? UpdateCheckUrl { get; set; } = "https://raw.githubusercontent.com/namnamir/WakeyWindows/main/Version";
 
@@ -75,29 +82,20 @@ namespace PowerManager
         {
             try
             {
-                // Prefer the directory of the entry assembly (the actual .exe),
-                // which is stable even for single-file deployments.
                 var entryAssembly = Assembly.GetEntryAssembly();
                 var exePath = entryAssembly?.Location;
-
-                string baseDir;
-                if (!string.IsNullOrEmpty(exePath))
-                {
-                    baseDir = Path.GetDirectoryName(exePath) ?? AppDomain.CurrentDomain.BaseDirectory;
-                }
-                else
-                {
-                    baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                }
-
+                string baseDir = !string.IsNullOrEmpty(exePath)
+                    ? Path.GetDirectoryName(exePath) ?? AppDomain.CurrentDomain.BaseDirectory
+                    : AppDomain.CurrentDomain.BaseDirectory;
                 return Path.Combine(baseDir, "config.json");
             }
             catch
             {
-                // Fallback to AppDomain base directory if anything goes wrong
                 return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
             }
         }
+
+        public static string GetConfigFilePath() => ConfigPath;
 
         public static Settings Load()
         {
@@ -110,12 +108,8 @@ namespace PowerManager
                     return settings ?? new Settings();
                 }
             }
-            catch
-            {
-                // If config is corrupted, use defaults
-            }
+            catch { }
 
-            // Create default config file
             var defaultSettings = new Settings();
             defaultSettings.Save();
             return defaultSettings;
@@ -125,17 +119,10 @@ namespace PowerManager
         {
             try
             {
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                };
-                string json = JsonSerializer.Serialize(this, options);
+                string json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(ConfigPath, json);
             }
-            catch
-            {
-                // Silently fail if we can't write config
-            }
+            catch { }
         }
     }
 }

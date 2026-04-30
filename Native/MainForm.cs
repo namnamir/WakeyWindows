@@ -6,16 +6,20 @@ using System.Threading;
 
 namespace PowerManager
 {
-    public record LogEntry(DateTime Time, string Icon, string Message);
+    public record LogEntry(DateTime Time, string Icon, string Message, LogLevel Level);
+
+    public enum LogLevel { Info, Success, Warning, UserActive, Disabled }
 
     public class LiveStats
     {
         public string StatusText { get; init; } = "";
         public string StatusIcon { get; init; } = "";
         public Color StatusColor { get; init; } = Color.Gray;
+        public string ActiveMethod { get; init; } = "";
         public TimeSpan SessionUptime { get; init; }
         public int KeepAliveCount { get; init; }
         public TimeSpan? TimeUntilNext { get; init; }
+        public DateTime? NextFireAt { get; init; }
         public int CurrentIntervalSeconds { get; init; }
         public IReadOnlyList<LogEntry> RecentLog { get; init; } = Array.Empty<LogEntry>();
         public bool IsEnabled { get; init; }
@@ -27,12 +31,14 @@ namespace PowerManager
         private readonly ContextMenuStrip _trayMenu;
         private readonly System.Windows.Forms.Timer _keepAliveTimer;
         private readonly System.Windows.Forms.Timer _activityTimer;
+        private readonly System.Windows.Forms.Timer _trayTooltipTimer;
         private readonly Settings _settings;
         private readonly ActivityDetector _activityDetector;
         private readonly Random _random = new();
 
         private bool _isPaused;
         private bool _isUserActive;
+        private bool _wasWithinHours = true;
         private DateTime _lastKeepAlive = DateTime.MinValue;
         private int _currentInterval;
         private DateTime _timerStartedAt = DateTime.Now;
@@ -40,11 +46,12 @@ namespace PowerManager
         private readonly DateTime _sessionStart = DateTime.Now;
         private int _keepAliveCount;
         private readonly List<LogEntry> _logEntries = new();
-        private const int MaxLogEntries = 100;
+        private const int MaxLogEntries = 200;
 
         private ToolStripMenuItem _statusItem = null!;
         private ToolStripMenuItem _pauseItem = null!;
         private ToolStripMenuItem _enabledItem = null!;
+        private ToolStripMenuItem _methodMenu = null!;
 
         public MainForm(string[] args)
         {
@@ -57,7 +64,7 @@ namespace PowerManager
             this.Visible = false;
             this.FormBorderStyle = FormBorderStyle.FixedToolWindow;
             this.Size = new Size(1, 1);
-            this.Location = new Point(-1000, -1000);
+            this.Location = new Point(-2000, -2000);
 
             _trayMenu = CreateTrayMenu();
 
@@ -80,6 +87,11 @@ namespace PowerManager
 
             _activityTimer = new System.Windows.Forms.Timer { Interval = 2000 };
             _activityTimer.Tick += ActivityTimer_Tick;
+
+            // Update tray tooltip every 5 seconds with countdown
+            _trayTooltipTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+            _trayTooltipTimer.Tick += (s, e) => RefreshTrayTooltip();
+            _trayTooltipTimer.Start();
 
             if (_settings.Enabled) Start();
             UpdateTrayStatus();
@@ -112,12 +124,53 @@ namespace PowerManager
             menu.Items.Add(_pauseItem);
 
             menu.Items.Add(new ToolStripSeparator());
+
+            // Quick mode switch submenu
+            _methodMenu = new ToolStripMenuItem("Mode");
+            RebuildMethodMenu();
+            menu.Items.Add(_methodMenu);
+
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Dashboard…", null, (s, e) => ShowDashboard()));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Exit", null, (s, e) => ExitApplication()));
 
             return menu;
         }
+
+        private void RebuildMethodMenu()
+        {
+            _methodMenu.DropDownItems.Clear();
+            AddMethodItem("Mouse jiggle", "mouse_jiggle");
+            AddMethodItem("Key press (F15)", "key_press");
+            AddMethodItem("API only", "api_only");
+        }
+
+        private void AddMethodItem(string label, string method)
+        {
+            var item = new ToolStripMenuItem(label, null, (s, e) => SwitchMethod(method))
+            {
+                Checked = _settings.SimulationMethod == method
+            };
+            _methodMenu.DropDownItems.Add(item);
+        }
+
+        private void SwitchMethod(string method)
+        {
+            _settings.SimulationMethod = method;
+            _settings.Save();
+            RebuildMethodMenu();
+            AddLog("⚡", $"Mode switched to: {MethodLabel(method)}", LogLevel.Info);
+            ShowNotification("WakeyWindows", $"Mode switched to {MethodLabel(method)}.");
+        }
+
+        private static string MethodLabel(string method) => method switch
+        {
+            "mouse_jiggle" => "Mouse jiggle",
+            "key_press" => "Key press (F15)",
+            "api_only" => "API only",
+            _ => method
+        };
 
         private void SetNextInterval()
         {
@@ -134,10 +187,32 @@ namespace PowerManager
         {
             if (_isPaused || !_settings.Enabled) return;
 
-            if (!_activityDetector.IsWithinWorkingHours())
+            bool withinHours = _activityDetector.IsWithinWorkingHours();
+
+            // Notify on working-hours boundary transitions
+            if (!withinHours && _wasWithinHours)
+            {
+                ShowNotification("WakeyWindows", "Outside working hours — keep-alive paused.");
+                AddLog("🕐", "Outside working hours — paused", LogLevel.Warning);
+            }
+            else if (withinHours && !_wasWithinHours)
+            {
+                ShowNotification("WakeyWindows", "Working hours started — keep-alive resumed.");
+                AddLog("🟢", "Working hours started — resumed", LogLevel.Success);
+            }
+            _wasWithinHours = withinHours;
+
+            if (!withinHours)
             {
                 UpdateTrayStatus("Outside working hours");
-                AddLog("🕐", "Outside working hours — skipped");
+                SetNextInterval();
+                return;
+            }
+
+            if (_activityDetector.IsTodayHoliday())
+            {
+                UpdateTrayStatus("Holiday — paused");
+                AddLog("🎉", "Public holiday — skipped", LogLevel.Warning);
                 SetNextInterval();
                 return;
             }
@@ -149,18 +224,26 @@ namespace PowerManager
                 return;
             }
 
+            // Execute the selected simulation method
             KeepAwake.PreventSleep(_settings.KeepDisplayOn);
-            if (_settings.SimulationMethod != "api_only")
+            switch (_settings.SimulationMethod)
             {
-                MouseJiggler.Jiggle();
-                _activityDetector.MarkAsJiggle();
+                case "mouse_jiggle":
+                    MouseJiggler.Jiggle();
+                    _activityDetector.MarkAsJiggle();
+                    break;
+                case "key_press":
+                    KeyboardSimulator.PressKey();
+                    _activityDetector.MarkAsJiggle();
+                    break;
+                // "api_only" — SetThreadExecutionState only, already called above
             }
 
             _lastKeepAlive = DateTime.Now;
             _keepAliveCount++;
             SetNextInterval();
             UpdateTrayStatus("Active");
-            AddLog("✅", "Keep-alive sent");
+            AddLog("✅", $"Keep-alive sent · {MethodLabel(_settings.SimulationMethod)}", LogLevel.Success);
         }
 
         private void ActivityTimer_Tick(object? sender, EventArgs e)
@@ -173,12 +256,12 @@ namespace PowerManager
             if (_isUserActive && !wasActive)
             {
                 UpdateTrayStatus("User active — paused");
-                AddLog("👤", "User activity detected — paused");
+                AddLog("👤", "User activity detected — paused", LogLevel.UserActive);
             }
             else if (!_isUserActive && wasActive && _settings.Enabled && !_isPaused)
             {
                 UpdateTrayStatus("Active");
-                AddLog("💤", "User idle — resuming");
+                AddLog("💤", "User idle — resuming", LogLevel.Info);
             }
         }
 
@@ -196,8 +279,8 @@ namespace PowerManager
             }
 
             UpdateTrayStatus("Active");
-            AddLog("🟢", "WakeyWindows started");
-            ShowNotification("WakeyWindows", "System keep-alive is now active.");
+            AddLog("🟢", "WakeyWindows started", LogLevel.Success);
+            ShowNotification("WakeyWindows", $"Keep-alive active · Mode: {MethodLabel(_settings.SimulationMethod)}");
         }
 
         private void Stop()
@@ -206,7 +289,7 @@ namespace PowerManager
             _activityTimer.Stop();
             KeepAwake.AllowSleep();
             UpdateTrayStatus("Disabled");
-            AddLog("🔴", "WakeyWindows disabled");
+            AddLog("🔴", "WakeyWindows disabled", LogLevel.Disabled);
             ShowNotification("WakeyWindows", "Keep-alive disabled. System can sleep normally.");
         }
 
@@ -229,13 +312,14 @@ namespace PowerManager
             {
                 KeepAwake.AllowSleep();
                 UpdateTrayStatus("Paused");
-                AddLog("⏸", "Paused by user");
+                AddLog("⏸", "Paused by user", LogLevel.Warning);
                 ShowNotification("WakeyWindows", "Keep-alive paused.");
             }
             else
             {
                 UpdateTrayStatus("Active");
-                AddLog("▶", "Resumed by user");
+                AddLog("▶", "Resumed by user", LogLevel.Success);
+                ShowNotification("WakeyWindows", "Keep-alive resumed.");
             }
         }
 
@@ -249,12 +333,40 @@ namespace PowerManager
             else s = "Active";
 
             _statusItem.Text = $"● {s}";
-            _trayIcon.Text = $"WakeyWindows — {s}";
+            _trayIcon.Text = TruncateTrayText($"WakeyWindows — {s}");
         }
 
-        private void AddLog(string icon, string message)
+        private void RefreshTrayTooltip()
         {
-            _logEntries.Insert(0, new LogEntry(DateTime.Now, icon, message));
+            if (!_settings.Enabled || _isPaused || _isUserActive)
+            {
+                UpdateTrayStatus();
+                return;
+            }
+
+            if (_keepAliveTimer.Enabled)
+            {
+                var remaining = TimeSpan.FromSeconds(_currentInterval) - (DateTime.Now - _timerStartedAt);
+                if (remaining.TotalSeconds > 0)
+                {
+                    string countdown = remaining.TotalSeconds >= 60
+                        ? $"{(int)remaining.TotalMinutes}m {remaining.Seconds:D2}s"
+                        : $"{(int)remaining.TotalSeconds}s";
+                    _trayIcon.Text = TruncateTrayText($"WakeyWindows — Active · next in {countdown}");
+                    _statusItem.Text = $"● Active · next in {countdown}";
+                    return;
+                }
+            }
+            UpdateTrayStatus();
+        }
+
+        // Windows tray text limit is 63 chars (64 including null terminator)
+        private static string TruncateTrayText(string text) =>
+            text.Length > 63 ? text[..60] + "…" : text;
+
+        private void AddLog(string icon, string message, LogLevel level)
+        {
+            _logEntries.Insert(0, new LogEntry(DateTime.Now, icon, message, level));
             if (_logEntries.Count > MaxLogEntries)
                 _logEntries.RemoveAt(_logEntries.Count - 1);
         }
@@ -265,18 +377,28 @@ namespace PowerManager
             _trayIcon.BalloonTipTitle = title;
             _trayIcon.BalloonTipText = text;
             _trayIcon.BalloonTipIcon = ToolTipIcon.Info;
-            _trayIcon.ShowBalloonTip(3000);
+            _trayIcon.ShowBalloonTip(4000);
         }
 
         public LiveStats GetLiveStats()
         {
             var now = DateTime.Now;
             TimeSpan? timeUntilNext = null;
+            DateTime? nextFireAt = null;
 
             if (_keepAliveTimer.Enabled && _settings.Enabled && !_isPaused)
             {
                 var remaining = TimeSpan.FromSeconds(_currentInterval) - (now - _timerStartedAt);
-                timeUntilNext = remaining.TotalSeconds > 0 ? remaining : TimeSpan.Zero;
+                if (remaining.TotalSeconds > 0)
+                {
+                    timeUntilNext = remaining;
+                    nextFireAt = now + remaining;
+                }
+                else
+                {
+                    timeUntilNext = TimeSpan.Zero;
+                    nextFireAt = now;
+                }
             }
 
             string statusText; string statusIcon; Color statusColor;
@@ -289,6 +411,8 @@ namespace PowerManager
             { statusText = "User active — paused"; statusIcon = "👤"; statusColor = Color.FromArgb(33, 150, 243); }
             else if (!_activityDetector.IsWithinWorkingHours())
             { statusText = "Outside working hours"; statusIcon = "🕐"; statusColor = Color.FromArgb(255, 152, 0); }
+            else if (_activityDetector.IsTodayHoliday())
+            { statusText = "Public holiday — paused"; statusIcon = "🎉"; statusColor = Color.FromArgb(255, 152, 0); }
             else
             { statusText = "Active — keeping awake"; statusIcon = "✅"; statusColor = Color.FromArgb(76, 175, 80); }
 
@@ -297,9 +421,11 @@ namespace PowerManager
                 StatusText = statusText,
                 StatusIcon = statusIcon,
                 StatusColor = statusColor,
+                ActiveMethod = MethodLabel(_settings.SimulationMethod),
                 SessionUptime = now - _sessionStart,
                 KeepAliveCount = _keepAliveCount,
                 TimeUntilNext = timeUntilNext,
+                NextFireAt = nextFireAt,
                 CurrentIntervalSeconds = _currentInterval,
                 RecentLog = _logEntries.AsReadOnly(),
                 IsEnabled = _settings.Enabled
@@ -314,6 +440,7 @@ namespace PowerManager
                 _settings.Save();
                 _trayIcon.Visible = _settings.ShowTrayIcon;
                 _enabledItem.Checked = _settings.Enabled;
+                RebuildMethodMenu();
 
                 if (_settings.Enabled && !_keepAliveTimer.Enabled) Start();
                 else if (!_settings.Enabled && _keepAliveTimer.Enabled) Stop();
@@ -323,6 +450,7 @@ namespace PowerManager
         private void ExitApplication()
         {
             KeepAwake.AllowSleep();
+            _trayTooltipTimer.Stop();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             Application.Exit();

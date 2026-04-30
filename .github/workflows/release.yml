@@ -27,13 +27,16 @@ jobs:
       - name: Publish Native app
         run: dotnet publish Native/WakeyNative.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o Native/publish
 
-      - name: Verify exe and list publish folder
+      - name: Verify exe and compute SHA256
         run: |
           if (-not (Test-Path "Native/publish/PowerManager.exe")) {
             Write-Error "PowerManager.exe not found. Contents of Native/publish:"
             Get-ChildItem -Path "Native/publish" -Recurse | ForEach-Object { $_.FullName }
             exit 1
           }
+          $hash = (Get-FileHash "Native/publish/PowerManager.exe" -Algorithm SHA256).Hash.ToLower()
+          "$hash  PowerManager.exe" | Out-File -Encoding utf8 "Native/publish/PowerManager.exe.sha256"
+          Write-Host "SHA256: $hash"
           Get-ChildItem "Native/publish" | ForEach-Object { $_.Name }
 
       - name: Create Release and upload exe
@@ -43,6 +46,7 @@ jobs:
           name: Release ${{ github.ref_name }}
           files: |
             Native/publish/PowerManager.exe
+            Native/publish/PowerManager.exe.sha256
           generate_release_notes: false
           fail_on_unmatched_files: true
         env:

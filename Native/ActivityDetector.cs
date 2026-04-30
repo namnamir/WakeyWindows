@@ -1,6 +1,10 @@
 using System;
 using System.Drawing;
+using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace PowerManager
 {
@@ -14,25 +18,23 @@ namespace PowerManager
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct POINT
-        {
-            public int X;
-            public int Y;
-        }
+        private struct POINT { public int X; public int Y; }
 
-        [DllImport("user32.dll")]
-        private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+        [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+        [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
+        [DllImport("kernel32.dll")] private static extern uint GetTickCount();
 
-        [DllImport("user32.dll")]
-        private static extern bool GetCursorPos(out POINT lpPoint);
-
-        [DllImport("kernel32.dll")]
-        private static extern uint GetTickCount();
+        private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
 
         private Point _lastMousePosition;
         private DateTime _lastActivityTime;
         private DateTime _lastJiggleTime = DateTime.MinValue;
         private readonly Settings _settings;
+
+        // Holiday cache
+        private HashSet<string>? _holidayCache;
+        private int _holidayCacheYear = -1;
+        private bool _holidayFetchInProgress;
 
         public ActivityDetector(Settings settings)
         {
@@ -41,45 +43,25 @@ namespace PowerManager
             _lastActivityTime = DateTime.Now;
         }
 
-        /// <summary>
-        /// Gets the number of seconds since the last user input (keyboard or mouse)
-        /// </summary>
         public int GetIdleTimeSeconds()
         {
-            LASTINPUTINFO lastInputInfo = new LASTINPUTINFO();
-            lastInputInfo.cbSize = (uint)Marshal.SizeOf(lastInputInfo);
-
-            if (GetLastInputInfo(ref lastInputInfo))
-            {
-                uint idleTime = GetTickCount() - lastInputInfo.dwTime;
-                return (int)(idleTime / 1000);
-            }
-
+            var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
+            if (GetLastInputInfo(ref info))
+                return (int)((GetTickCount() - info.dwTime) / 1000);
             return 0;
         }
 
-        /// <summary>
-        /// Call this immediately after a jiggle so the activity detector ignores
-        /// the synthetic input event we just generated.
-        /// </summary>
         public void MarkAsJiggle()
         {
             _lastJiggleTime = DateTime.Now;
             _lastMousePosition = GetCurrentMousePosition();
         }
 
-        /// <summary>
-        /// Checks if user is currently active (working)
-        /// </summary>
         public bool IsUserActive()
         {
-            if (!_settings.DetectUserActivity)
-                return false;
+            if (!_settings.DetectUserActivity) return false;
 
-            // Don't mistake our own jiggle for real user activity
             bool recentJiggle = (DateTime.Now - _lastJiggleTime).TotalSeconds < 3;
-
-            // Check system-wide idle time
             int idleSeconds = GetIdleTimeSeconds();
             if (idleSeconds < _settings.IdleTimeoutSeconds && !recentJiggle)
             {
@@ -87,12 +69,10 @@ namespace PowerManager
                 return true;
             }
 
-            // Check mouse movement
             Point currentPos = GetCurrentMousePosition();
-            int deltaX = Math.Abs(currentPos.X - _lastMousePosition.X);
-            int deltaY = Math.Abs(currentPos.Y - _lastMousePosition.Y);
-
-            if (deltaX > _settings.MouseMovementThreshold || deltaY > _settings.MouseMovementThreshold)
+            int dx = Math.Abs(currentPos.X - _lastMousePosition.X);
+            int dy = Math.Abs(currentPos.Y - _lastMousePosition.Y);
+            if (dx > _settings.MouseMovementThreshold || dy > _settings.MouseMovementThreshold)
             {
                 _lastMousePosition = currentPos;
                 _lastActivityTime = DateTime.Now;
@@ -102,70 +82,80 @@ namespace PowerManager
             return false;
         }
 
-        /// <summary>
-        /// Checks if we should pause keep-alive due to recent user activity
-        /// </summary>
         public bool ShouldPauseKeepAlive()
         {
-            if (!_settings.DetectUserActivity)
-                return false;
-
-            // If user was recently active, pause keep-alive
-            double secondsSinceActivity = (DateTime.Now - _lastActivityTime).TotalSeconds;
-            return secondsSinceActivity < _settings.ActivityPauseSeconds;
+            if (!_settings.DetectUserActivity) return false;
+            return (DateTime.Now - _lastActivityTime).TotalSeconds < _settings.ActivityPauseSeconds;
         }
 
-        /// <summary>
-        /// Updates the last known mouse position (call when keep-alive moves mouse)
-        /// </summary>
-        public void UpdateMousePosition()
-        {
-            _lastMousePosition = GetCurrentMousePosition();
-        }
+        public void UpdateMousePosition() => _lastMousePosition = GetCurrentMousePosition();
 
         private Point GetCurrentMousePosition()
         {
-            if (GetCursorPos(out POINT point))
-            {
-                return new Point(point.X, point.Y);
-            }
+            if (GetCursorPos(out POINT p)) return new Point(p.X, p.Y);
             return Point.Empty;
         }
 
-        /// <summary>
-        /// Checks if current time is within working hours
-        /// </summary>
         public bool IsWithinWorkingHours()
         {
-            if (!_settings.UseWorkingHours)
-                return true;
+            if (!_settings.UseWorkingHours) return true;
 
             var now = DateTime.Now;
-            string currentDay = now.DayOfWeek.ToString();
+            string today = now.DayOfWeek.ToString();
 
-            // Check if today is a working day
             bool isWorkingDay = false;
             foreach (var day in _settings.WorkingDays)
+                if (day.Equals(today, StringComparison.OrdinalIgnoreCase)) { isWorkingDay = true; break; }
+
+            if (!isWorkingDay) return false;
+
+            if (!TimeSpan.TryParse(_settings.WorkingHoursStart, out var start) ||
+                !TimeSpan.TryParse(_settings.WorkingHoursEnd, out var end))
+                return true;
+
+            return now.TimeOfDay >= start && now.TimeOfDay <= end;
+        }
+
+        // Returns true when today is a public holiday (and the setting is on).
+        // Holiday list is fetched from Open Holidays API and cached for the year.
+        public bool IsTodayHoliday()
+        {
+            if (!_settings.SkipHolidays) return false;
+
+            var today = DateTime.Today;
+            if (_holidayCacheYear != today.Year)
+                RefreshHolidayCache(today.Year);
+
+            return _holidayCache?.Contains(today.ToString("yyyy-MM-dd")) == true;
+        }
+
+        private void RefreshHolidayCache(int year)
+        {
+            if (_holidayFetchInProgress) return;
+            _holidayFetchInProgress = true;
+            _holidayCacheYear = year;
+            _holidayCache ??= new HashSet<string>();
+
+            // Fire-and-forget; cache is populated asynchronously.
+            Task.Run(async () =>
             {
-                if (day.Equals(currentDay, StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    isWorkingDay = true;
-                    break;
+                    string country = string.IsNullOrWhiteSpace(_settings.HolidayCountryCode) ? "NL" : _settings.HolidayCountryCode.ToUpper();
+                    string url = $"https://openholidaysapi.org/PublicHolidays?countryIsoCode={country}&languageIsoCode=EN&validFrom={year}-01-01&validTo={year}-12-31";
+                    var json = await _http.GetStringAsync(url);
+                    using var doc = JsonDocument.Parse(json);
+                    var dates = new HashSet<string>();
+                    foreach (var el in doc.RootElement.EnumerateArray())
+                    {
+                        if (el.TryGetProperty("startDate", out var d))
+                            dates.Add(d.GetString() ?? "");
+                    }
+                    _holidayCache = dates;
                 }
-            }
-
-            if (!isWorkingDay)
-                return false;
-
-            // Check if within working hours
-            if (TimeSpan.TryParse(_settings.WorkingHoursStart, out TimeSpan start) &&
-                TimeSpan.TryParse(_settings.WorkingHoursEnd, out TimeSpan end))
-            {
-                TimeSpan currentTime = now.TimeOfDay;
-                return currentTime >= start && currentTime <= end;
-            }
-
-            return true;
+                catch { /* keep stale or empty cache on failure */ }
+                finally { _holidayFetchInProgress = false; }
+            });
         }
     }
 }

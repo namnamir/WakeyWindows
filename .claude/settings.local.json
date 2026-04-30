@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(dotnet build *)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(dotnet --version)"
     ]
   }
 }
