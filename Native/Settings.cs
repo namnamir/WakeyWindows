@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -76,6 +77,85 @@ namespace PowerManager
         // Optional URL to check for newer versions
         [JsonPropertyName("updateCheckUrl")]
         public string? UpdateCheckUrl { get; set; } = "https://raw.githubusercontent.com/namnamir/WakeyWindows/main/Version";
+
+        // ── Appearance: colors (hex strings e.g. "#4CAF50") ───────────────
+        [JsonPropertyName("colorHeaderGradientStart")]
+        public string ColorHeaderGradientStart { get; set; } = "#1C3064";
+
+        [JsonPropertyName("colorHeaderGradientEnd")]
+        public string ColorHeaderGradientEnd { get; set; } = "#12204A";
+
+        [JsonPropertyName("colorFormBackground")]
+        public string ColorFormBackground { get; set; } = "#F5F7FA";
+
+        [JsonPropertyName("colorAccentActive")]
+        public string ColorAccentActive { get; set; } = "#4CAF50";
+
+        [JsonPropertyName("colorAccentPaused")]
+        public string ColorAccentPaused { get; set; } = "#FF9800";
+
+        [JsonPropertyName("colorAccentDisabled")]
+        public string ColorAccentDisabled { get; set; } = "#9E9E9E";
+
+        [JsonPropertyName("colorAccentUserActive")]
+        public string ColorAccentUserActive { get; set; } = "#2196F3";
+
+        [JsonPropertyName("colorCountdown")]
+        public string ColorCountdown { get; set; } = "#1976D2";
+
+        [JsonPropertyName("colorProgressBar")]
+        public string ColorProgressBar { get; set; } = "#1976D2";
+
+        [JsonPropertyName("colorProgressBarUrgent")]
+        public string ColorProgressBarUrgent { get; set; } = "#F4511E";
+
+        [JsonPropertyName("colorLogBackground")]
+        public string ColorLogBackground { get; set; } = "#1E1E1E";
+
+        [JsonPropertyName("colorLogSuccess")]
+        public string ColorLogSuccess { get; set; } = "#64DC78";
+
+        [JsonPropertyName("colorLogWarning")]
+        public string ColorLogWarning { get; set; } = "#FFB74D";
+
+        [JsonPropertyName("colorLogUserActive")]
+        public string ColorLogUserActive { get; set; } = "#64B5F6";
+
+        [JsonPropertyName("colorLogDisabled")]
+        public string ColorLogDisabled { get; set; } = "#EF5350";
+
+        [JsonPropertyName("colorLogInfo")]
+        public string ColorLogInfo { get; set; } = "#B4B4B4";
+
+        // ── Appearance: fonts ─────────────────────────────────────────────
+        [JsonPropertyName("fontFamily")]
+        public string FontFamily { get; set; } = "Segoe UI";
+
+        [JsonPropertyName("fontSizeBase")]
+        public float FontSizeBase { get; set; } = 9f;
+
+        [JsonPropertyName("logFontFamily")]
+        public string LogFontFamily { get; set; } = "Consolas";
+
+        [JsonPropertyName("logFontSize")]
+        public float LogFontSize { get; set; } = 8.5f;
+
+        // ── Behavior tweaks ───────────────────────────────────────────────
+        [JsonPropertyName("logMaxEntries")]
+        public int LogMaxEntries { get; set; } = 200;
+
+        [JsonPropertyName("trayTooltipRefreshSeconds")]
+        public int TrayTooltipRefreshSeconds { get; set; } = 5;
+
+        [JsonPropertyName("progressUrgentThreshold")]
+        public double ProgressUrgentThreshold { get; set; } = 0.20;
+
+        // ── Color helper ──────────────────────────────────────────────────
+        public static Color ParseColor(string hex, Color fallback)
+        {
+            try { return ColorTranslator.FromHtml(hex); }
+            catch { return fallback; }
+        }
 
         private static string GetConfigPath()
         {

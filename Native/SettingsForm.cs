@@ -65,7 +65,7 @@ namespace PowerManager
         {
             _settings = settings;
             _getStats = getStats;
-            Font = new Font("Segoe UI", 9f);
+            Font = new Font(_settings.FontFamily, _settings.FontSizeBase);
 
             InitializeComponent();
             LoadSettings();
@@ -87,15 +87,19 @@ namespace PowerManager
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
             ShowInTaskbar = true;
-            BackColor = Color.FromArgb(245, 247, 250);
+            BackColor = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250));
 
             // ── Header ─────────────────────────────────────────────────────
-            var header = new GradientPanel { Dock = DockStyle.Top, Height = 72 };
+            var header = new GradientPanel(
+                Settings.ParseColor(_settings.ColorHeaderGradientStart, Color.FromArgb(28, 48, 100)),
+                Settings.ParseColor(_settings.ColorHeaderGradientEnd,   Color.FromArgb(18, 30, 72))
+            ) { Dock = DockStyle.Top, Height = 72 };
             header.Controls.Add(new Label
             {
                 Text = "💤  WakeyWindows",
                 Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 ForeColor = Color.White,
+                BackColor = Color.Transparent,
                 AutoSize = true,
                 Location = new Point(16, 12)
             });
@@ -104,6 +108,7 @@ namespace PowerManager
                 Text = $"System Keep-Alive Manager  ·  v{AppVersion}",
                 Font = new Font("Segoe UI", 8.5f),
                 ForeColor = Color.FromArgb(180, 215, 255),
+                BackColor = Color.Transparent,
                 AutoSize = true,
                 Location = new Point(19, 40)
             });
@@ -157,7 +162,7 @@ namespace PowerManager
 
         private TabPage BuildDashboardTab()
         {
-            var page = new TabPage("🖥  Dashboard") { BackColor = Color.FromArgb(245, 247, 250) };
+            var page = new TabPage("🖥  Dashboard") { BackColor = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250)) };
 
             var layout = new TableLayoutPanel
             {
@@ -165,7 +170,7 @@ namespace PowerManager
                 ColumnCount = 1,
                 RowCount = 8,
                 Padding = new Padding(12, 8, 12, 8),
-                BackColor = Color.FromArgb(245, 247, 250)
+                BackColor = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250))
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // status header
@@ -190,9 +195,9 @@ namespace PowerManager
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
                 BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Color.FromArgb(30, 30, 30),
-                ForeColor = Color.FromArgb(220, 220, 220),
-                Font = new Font("Consolas", 8.5f),
+                BackColor = Settings.ParseColor(_settings.ColorLogBackground, Color.FromArgb(30, 30, 30)),
+                ForeColor = Settings.ParseColor(_settings.ColorLogInfo, Color.FromArgb(220, 220, 220)),
+                Font = new Font(_settings.LogFontFamily, _settings.LogFontSize),
                 ScrollBars = RichTextBoxScrollBars.Vertical,
                 WordWrap = false,
                 DetectUrls = false
@@ -207,7 +212,7 @@ namespace PowerManager
         {
             var card = MakeCard();
 
-            _accentBar = new Panel { Width = 5, Dock = DockStyle.Left, BackColor = Color.FromArgb(76, 175, 80) };
+            _accentBar = new Panel { Width = 5, Dock = DockStyle.Left, BackColor = Settings.ParseColor(_settings.ColorAccentActive, Color.FromArgb(76, 175, 80)) };
             card.Controls.Add(_accentBar);
 
             var content = new TableLayoutPanel
@@ -310,8 +315,8 @@ namespace PowerManager
             _countdownLabel = new Label
             {
                 Text = "—",
-                Font = new Font("Segoe UI", 20f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(25, 118, 210),
+                Font = new Font(_settings.FontFamily, 20f, FontStyle.Bold),
+                ForeColor = Settings.ParseColor(_settings.ColorCountdown, Color.FromArgb(25, 118, 210)),
                 AutoSize = true,
                 Margin = new Padding(0, 0, 14, 0),
                 Anchor = AnchorStyles.Left | AnchorStyles.Top
@@ -339,7 +344,7 @@ namespace PowerManager
             _progressFill = new Panel
             {
                 Location = new Point(0, 0),
-                BackColor = Color.FromArgb(25, 118, 210)
+                BackColor = Settings.ParseColor(_settings.ColorProgressBar, Color.FromArgb(25, 118, 210))
             };
             _progressContainer.Controls.Add(_progressFill);
             _progressContainer.Resize += (s, e) => RefreshProgressFill();
@@ -533,9 +538,10 @@ namespace PowerManager
 
         private TabPage BuildAboutTab()
         {
-            var page = new TabPage("ℹ  About") { BackColor = Color.FromArgb(245, 247, 250) };
+            var bgColor = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250));
+            var page = new TabPage("ℹ  About") { BackColor = bgColor };
 
-            var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(20, 16, 20, 16), BackColor = Color.FromArgb(245, 247, 250) };
+            var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(20, 16, 20, 16), BackColor = bgColor };
 
             // Single-column TableLayoutPanel — each row auto-sizes to content
             var layout = new TableLayoutPanel
@@ -544,7 +550,7 @@ namespace PowerManager
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 Dock = DockStyle.Top,
-                BackColor = Color.FromArgb(245, 247, 250)
+                BackColor = bgColor
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
@@ -679,11 +685,11 @@ namespace PowerManager
                 {
                     Color msgColor = entry.Level switch
                     {
-                        LogLevel.Success    => Color.FromArgb(100, 220, 120),
-                        LogLevel.Warning    => Color.FromArgb(255, 183, 77),
-                        LogLevel.UserActive => Color.FromArgb(100, 181, 246),
-                        LogLevel.Disabled   => Color.FromArgb(239, 83, 80),
-                        _                   => Color.FromArgb(180, 180, 180)
+                        LogLevel.Success    => Settings.ParseColor(_settings.ColorLogSuccess,    Color.FromArgb(100, 220, 120)),
+                        LogLevel.Warning    => Settings.ParseColor(_settings.ColorLogWarning,    Color.FromArgb(255, 183, 77)),
+                        LogLevel.UserActive => Settings.ParseColor(_settings.ColorLogUserActive, Color.FromArgb(100, 181, 246)),
+                        LogLevel.Disabled   => Settings.ParseColor(_settings.ColorLogDisabled,   Color.FromArgb(239, 83, 80)),
+                        _                   => Settings.ParseColor(_settings.ColorLogInfo,       Color.FromArgb(180, 180, 180))
                     };
                     _logBox.SelectionColor = Color.FromArgb(100, 100, 100);
                     _logBox.AppendText(entry.Time.ToString("HH:mm:ss") + "  ");
@@ -700,9 +706,9 @@ namespace PowerManager
             if (_progressContainer == null || _progressContainer.Width <= 0) return;
             int w = (int)(_progressContainer.Width * _lastProgressPct);
             _progressFill.Size = new Size(Math.Max(0, Math.Min(w, _progressContainer.Width)), _progressContainer.Height);
-            _progressFill.BackColor = _lastProgressPct < 0.2
-                ? Color.FromArgb(244, 81, 30)
-                : Color.FromArgb(25, 118, 210);
+            _progressFill.BackColor = _lastProgressPct < _settings.ProgressUrgentThreshold
+                ? Settings.ParseColor(_settings.ColorProgressBarUrgent, Color.FromArgb(244, 81, 30))
+                : Settings.ParseColor(_settings.ColorProgressBar,       Color.FromArgb(25, 118, 210));
         }
 
         // ════════════════════════════════════════════════════════════════════
@@ -921,13 +927,22 @@ namespace PowerManager
 
         private sealed class GradientPanel : Panel
         {
-            public GradientPanel() { DoubleBuffered = true; }
+            private readonly Color _start;
+            private readonly Color _end;
+
+            public GradientPanel(Color start, Color end)
+            {
+                DoubleBuffered = true;
+                _start = start;
+                _end = end;
+            }
+
             protected override void OnPaintBackground(PaintEventArgs e)
             {
                 if (ClientSize.Width <= 0 || ClientSize.Height <= 0) { base.OnPaintBackground(e); return; }
-                using var brush = new LinearGradientBrush(ClientRectangle, Color.FromArgb(28, 48, 100), Color.FromArgb(18, 30, 72), LinearGradientMode.Vertical);
+                using var brush = new LinearGradientBrush(ClientRectangle, _start, _end, LinearGradientMode.Vertical);
                 e.Graphics.FillRectangle(brush, ClientRectangle);
-                using var pen = new Pen(Color.FromArgb(10, 20, 55), 1);
+                using var pen = new Pen(Color.FromArgb(Math.Max(0, _end.R - 10), Math.Max(0, _end.G - 10), Math.Max(0, _end.B - 10)), 1);
                 e.Graphics.DrawLine(pen, 0, ClientSize.Height - 1, ClientSize.Width, ClientSize.Height - 1);
             }
         }

@@ -3,7 +3,11 @@
     "allow": [
       "Bash(dotnet build *)",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(dotnet --version)"
+      "Bash(dotnet --version)",
+      "Bash(git --version)",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\Git\\\\cmd\"; cd \"C:\\\\Users\\\\nikoual\\\\Desktop\\\\GIT\\\\WakeyWindows\"; git status; git log --oneline -5)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Test-Path *)"
     ]
   }
 }

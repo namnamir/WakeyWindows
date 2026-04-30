@@ -46,7 +46,7 @@ namespace PowerManager
         private readonly DateTime _sessionStart = DateTime.Now;
         private int _keepAliveCount;
         private readonly List<LogEntry> _logEntries = new();
-        private const int MaxLogEntries = 200;
+        private int MaxLogEntries => _settings.LogMaxEntries;
 
         private ToolStripMenuItem _statusItem = null!;
         private ToolStripMenuItem _pauseItem = null!;
@@ -88,8 +88,7 @@ namespace PowerManager
             _activityTimer = new System.Windows.Forms.Timer { Interval = 2000 };
             _activityTimer.Tick += ActivityTimer_Tick;
 
-            // Update tray tooltip every 5 seconds with countdown
-            _trayTooltipTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+            _trayTooltipTimer = new System.Windows.Forms.Timer { Interval = _settings.TrayTooltipRefreshSeconds * 1000 };
             _trayTooltipTimer.Tick += (s, e) => RefreshTrayTooltip();
             _trayTooltipTimer.Start();
 
@@ -407,17 +406,17 @@ namespace PowerManager
             string statusText; string statusIcon; Color statusColor;
 
             if (!_settings.Enabled)
-            { statusText = "Disabled"; statusIcon = "⛔"; statusColor = Color.FromArgb(158, 158, 158); }
+            { statusText = "Disabled"; statusIcon = "⛔"; statusColor = Settings.ParseColor(_settings.ColorAccentDisabled, Color.Gray); }
             else if (_isPaused)
-            { statusText = "Paused"; statusIcon = "⏸"; statusColor = Color.FromArgb(255, 152, 0); }
+            { statusText = "Paused"; statusIcon = "⏸"; statusColor = Settings.ParseColor(_settings.ColorAccentPaused, Color.Orange); }
             else if (_isUserActive)
-            { statusText = "User active — paused"; statusIcon = "👤"; statusColor = Color.FromArgb(33, 150, 243); }
+            { statusText = "User active — paused"; statusIcon = "👤"; statusColor = Settings.ParseColor(_settings.ColorAccentUserActive, Color.SteelBlue); }
             else if (!_activityDetector.IsWithinWorkingHours())
-            { statusText = "Outside working hours"; statusIcon = "🕐"; statusColor = Color.FromArgb(255, 152, 0); }
+            { statusText = "Outside working hours"; statusIcon = "🕐"; statusColor = Settings.ParseColor(_settings.ColorAccentPaused, Color.Orange); }
             else if (_activityDetector.IsTodayHoliday())
-            { statusText = "Public holiday — paused"; statusIcon = "🎉"; statusColor = Color.FromArgb(255, 152, 0); }
+            { statusText = "Public holiday — paused"; statusIcon = "🎉"; statusColor = Settings.ParseColor(_settings.ColorAccentPaused, Color.Orange); }
             else
-            { statusText = "Active — keeping awake"; statusIcon = "✅"; statusColor = Color.FromArgb(76, 175, 80); }
+            { statusText = "Active — keeping awake"; statusIcon = "✅"; statusColor = Settings.ParseColor(_settings.ColorAccentActive, Color.Green); }
 
             return new LiveStats
             {
