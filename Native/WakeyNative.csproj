@@ -17,6 +17,7 @@
     <Company>Microsoft Corporation</Company>
     <Copyright>Copyright © 2026</Copyright>
     <Version>2.0.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     
     <!-- Set to true for single-file deployment -->
     <PublishSingleFile>true</PublishSingleFile>
@@ -29,12 +30,17 @@
     <!-- Application icon -->
     <ApplicationIcon>app.ico</ApplicationIcon>
 
-    <!-- Application manifest: DPI awareness + compatibility declarations -->
+    <!-- Application manifest: compatibility + long paths (DPI set below via SDK property) -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- Per-Monitor V2 DPI: SDK property avoids WFAC010 warning from manifest -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="8.0.0" />
+    <!-- Pin to patched version — 8.0.0 has two high-severity vulnerabilities -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
+
 
 </Project>

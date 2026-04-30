@@ -192,13 +192,13 @@ namespace PowerManager
             // Notify on working-hours boundary transitions
             if (!withinHours && _wasWithinHours)
             {
-                ShowNotification("WakeyWindows", "Outside working hours — keep-alive paused.");
-                AddLog("🕐", "Outside working hours — paused", LogLevel.Warning);
+                ShowNotification("WakeyWindows", $"Outside working hours — resumes at {_settings.WorkingHoursStart}.");
+                AddLog("🕐", $"Outside working hours · resumes at {_settings.WorkingHoursStart}", LogLevel.Warning);
             }
             else if (withinHours && !_wasWithinHours)
             {
                 ShowNotification("WakeyWindows", "Working hours started — keep-alive resumed.");
-                AddLog("🟢", "Working hours started — resumed", LogLevel.Success);
+                AddLog("🟢", $"Working hours started · active until {_settings.WorkingHoursEnd}", LogLevel.Success);
             }
             _wasWithinHours = withinHours;
 
@@ -212,7 +212,7 @@ namespace PowerManager
             if (_activityDetector.IsTodayHoliday())
             {
                 UpdateTrayStatus("Holiday — paused");
-                AddLog("🎉", "Public holiday — skipped", LogLevel.Warning);
+                AddLog("🎉", $"Public holiday · {_settings.HolidayCountryCode} · resumes tomorrow", LogLevel.Warning);
                 SetNextInterval();
                 return;
             }
@@ -243,7 +243,7 @@ namespace PowerManager
             _keepAliveCount++;
             SetNextInterval();
             UpdateTrayStatus("Active");
-            AddLog("✅", $"Keep-alive sent · {MethodLabel(_settings.SimulationMethod)}", LogLevel.Success);
+            AddLog("✅", $"Keep-alive sent · {MethodLabel(_settings.SimulationMethod)} · next in ~{_currentInterval}s", LogLevel.Success);
         }
 
         private void ActivityTimer_Tick(object? sender, EventArgs e)
@@ -256,12 +256,12 @@ namespace PowerManager
             if (_isUserActive && !wasActive)
             {
                 UpdateTrayStatus("User active — paused");
-                AddLog("👤", "User activity detected — paused", LogLevel.UserActive);
+                AddLog("👤", $"User active — paused · resumes after {_settings.ActivityPauseSeconds}s idle", LogLevel.UserActive);
             }
             else if (!_isUserActive && wasActive && _settings.Enabled && !_isPaused)
             {
                 UpdateTrayStatus("Active");
-                AddLog("💤", "User idle — resuming", LogLevel.Info);
+                AddLog("💤", $"User idle — keep-alive resuming · next in ~{_currentInterval}s", LogLevel.Info);
             }
         }
 
@@ -279,7 +279,7 @@ namespace PowerManager
             }
 
             UpdateTrayStatus("Active");
-            AddLog("🟢", "WakeyWindows started", LogLevel.Success);
+            AddLog("🟢", $"WakeyWindows v{Application.ProductVersion.Split('+')[0]} started · Mode: {MethodLabel(_settings.SimulationMethod)}", LogLevel.Success);
             ShowNotification("WakeyWindows", $"Keep-alive active · Mode: {MethodLabel(_settings.SimulationMethod)}");
         }
 
@@ -289,7 +289,7 @@ namespace PowerManager
             _activityTimer.Stop();
             KeepAwake.AllowSleep();
             UpdateTrayStatus("Disabled");
-            AddLog("🔴", "WakeyWindows disabled", LogLevel.Disabled);
+            AddLog("🔴", $"WakeyWindows disabled · ran for {FormatUptime(DateTime.Now - _sessionStart)}", LogLevel.Disabled);
             ShowNotification("WakeyWindows", "Keep-alive disabled. System can sleep normally.");
         }
 
@@ -312,13 +312,13 @@ namespace PowerManager
             {
                 KeepAwake.AllowSleep();
                 UpdateTrayStatus("Paused");
-                AddLog("⏸", "Paused by user", LogLevel.Warning);
+                AddLog("⏸", "Paused by user · click Resume to continue", LogLevel.Warning);
                 ShowNotification("WakeyWindows", "Keep-alive paused.");
             }
             else
             {
                 UpdateTrayStatus("Active");
-                AddLog("▶", "Resumed by user", LogLevel.Success);
+                AddLog("▶", $"Resumed by user · next keep-alive in ~{_currentInterval}s", LogLevel.Success);
                 ShowNotification("WakeyWindows", "Keep-alive resumed.");
             }
         }
@@ -360,9 +360,12 @@ namespace PowerManager
             UpdateTrayStatus();
         }
 
-        // Windows tray text limit is 63 chars (64 including null terminator)
         private static string TruncateTrayText(string text) =>
             text.Length > 63 ? text[..60] + "…" : text;
+
+        private static string FormatUptime(TimeSpan t) =>
+            t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes}m" :
+            t.Minutes > 0     ? $"{t.Minutes}m {t.Seconds}s" : $"{t.Seconds}s";
 
         private void AddLog(string icon, string message, LogLevel level)
         {

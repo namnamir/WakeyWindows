@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -80,19 +79,9 @@ namespace PowerManager
 
         private static string GetConfigPath()
         {
-            try
-            {
-                var entryAssembly = Assembly.GetEntryAssembly();
-                var exePath = entryAssembly?.Location;
-                string baseDir = !string.IsNullOrEmpty(exePath)
-                    ? Path.GetDirectoryName(exePath) ?? AppDomain.CurrentDomain.BaseDirectory
-                    : AppDomain.CurrentDomain.BaseDirectory;
-                return Path.Combine(baseDir, "config.json");
-            }
-            catch
-            {
-                return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-            }
+            // AppContext.BaseDirectory is the correct way in single-file apps.
+            // Assembly.Location returns empty string when the app is published as single-file.
+            return Path.Combine(AppContext.BaseDirectory, "config.json");
         }
 
         public static string GetConfigFilePath() => ConfigPath;
