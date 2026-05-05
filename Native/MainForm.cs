@@ -23,6 +23,8 @@ namespace PowerManager
         public int CurrentIntervalSeconds { get; init; }
         public IReadOnlyList<LogEntry> RecentLog { get; init; } = Array.Empty<LogEntry>();
         public bool IsEnabled { get; init; }
+        public int SleepTimeoutAcSeconds { get; init; }
+        public int SleepTimeoutDcSeconds { get; init; }
     }
 
     public partial class MainForm : Form
@@ -47,6 +49,9 @@ namespace PowerManager
         private int _keepAliveCount;
         private readonly List<LogEntry> _logEntries = new();
         private int MaxLogEntries => _settings.LogMaxEntries;
+
+        private int _sleepTimeoutAc = -1;
+        private int _sleepTimeoutDc = -1;
 
         private ToolStripMenuItem _statusItem = null!;
         private ToolStripMenuItem _pauseItem = null!;
@@ -224,7 +229,7 @@ namespace PowerManager
             }
 
             // Execute the selected simulation method
-            KeepAwake.PreventSleep(_settings.KeepDisplayOn);
+            KeepAwake.PreventSleepContinuous(_settings.KeepDisplayOn);
             switch (_settings.SimulationMethod)
             {
                 case "mouse_jiggle":
@@ -264,15 +269,45 @@ namespace PowerManager
             }
         }
 
+        private void RecomputeIntervalSeconds()
+        {
+            (_sleepTimeoutAc, _sleepTimeoutDc) = ActivityDetector.GetSleepTimeouts();
+            int ac = _sleepTimeoutAc, dc = _sleepTimeoutDc;
+
+            // Both unavailable — keep whatever seconds are already stored
+            if (ac < 0 && dc < 0) return;
+
+            // Pick the most restrictive active (non-zero) timeout; fall back to 5m if "never sleep"
+            int baseSeconds;
+            string baseLabel;
+            if      (ac > 0 && dc > 0) { baseSeconds = Math.Min(ac, dc); baseLabel = $"sleep {FormatSeconds(baseSeconds)}"; }
+            else if (ac > 0)            { baseSeconds = ac;               baseLabel = $"AC sleep {FormatSeconds(ac)}"; }
+            else if (dc > 0)            { baseSeconds = dc;               baseLabel = $"DC sleep {FormatSeconds(dc)}"; }
+            else                        { baseSeconds = 300;              baseLabel = "5m base (no sleep timeout)"; }
+
+            int newMin = Math.Max(10, (int)Math.Round(baseSeconds * _settings.IntervalMinPercent / 100.0));
+            int newMax = Math.Max(newMin + 1, (int)Math.Round(baseSeconds * _settings.IntervalMaxPercent / 100.0));
+
+            bool changed = newMin != _settings.IntervalMinSeconds || newMax != _settings.IntervalMaxSeconds;
+            if (!changed) return;
+
+            _settings.IntervalMinSeconds = newMin;
+            _settings.IntervalMaxSeconds = newMax;
+            _settings.Save();
+            SetNextInterval();
+            AddLog("⚡", $"Interval set to {newMin}–{newMax}s  ·  {_settings.IntervalMinPercent}–{_settings.IntervalMaxPercent}%  of  {baseLabel}", LogLevel.Info);
+        }
+
         private void Start()
         {
+            RecomputeIntervalSeconds();
             _keepAliveTimer.Start();
             _activityTimer.Start();
             _timerStartedAt = DateTime.Now;
 
             if (!_activityDetector.IsUserActive())
             {
-                KeepAwake.PreventSleep(_settings.KeepDisplayOn);
+                KeepAwake.PreventSleepContinuous(_settings.KeepDisplayOn);
                 _lastKeepAlive = DateTime.Now;
                 _keepAliveCount++;
             }
@@ -366,6 +401,9 @@ namespace PowerManager
             t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes}m" :
             t.Minutes > 0     ? $"{t.Minutes}m {t.Seconds}s" : $"{t.Seconds}s";
 
+        internal static string FormatSeconds(int s) =>
+            s >= 60 ? $"{s / 60}m{(s % 60 > 0 ? $" {s % 60}s" : "")}" : $"{s}s";
+
         private void AddLog(string icon, string message, LogLevel level)
         {
             _logEntries.Insert(0, new LogEntry(DateTime.Now, icon, message, level));
@@ -430,7 +468,9 @@ namespace PowerManager
                 NextFireAt = nextFireAt,
                 CurrentIntervalSeconds = _currentInterval,
                 RecentLog = _logEntries.AsReadOnly(),
-                IsEnabled = _settings.Enabled
+                IsEnabled = _settings.Enabled,
+                SleepTimeoutAcSeconds = _sleepTimeoutAc,
+                SleepTimeoutDcSeconds = _sleepTimeoutDc
             };
         }
 
@@ -446,6 +486,7 @@ namespace PowerManager
 
                 if (_settings.Enabled && !_keepAliveTimer.Enabled) Start();
                 else if (!_settings.Enabled && _keepAliveTimer.Enabled) Stop();
+                else if (_settings.Enabled) RecomputeIntervalSeconds();
             }
         }
 

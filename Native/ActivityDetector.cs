@@ -23,6 +23,13 @@ namespace PowerManager
         [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
         [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
         [DllImport("kernel32.dll")] private static extern uint GetTickCount();
+        [DllImport("kernel32.dll")] private static extern IntPtr LocalFree(IntPtr hMem);
+        [DllImport("powrprof.dll")] private static extern uint PowerGetActiveScheme(IntPtr UserRootPowerKey, out IntPtr ActivePolicyGuid);
+        [DllImport("powrprof.dll")] private static extern uint PowerReadACValueIndex(IntPtr RootPowerKey, ref Guid SchemeGuid, ref Guid SubGroupOfPowerSettingsGuid, ref Guid PowerSettingGuid, out uint AcValueIndex);
+        [DllImport("powrprof.dll")] private static extern uint PowerReadDCValueIndex(IntPtr RootPowerKey, ref Guid SchemeGuid, ref Guid SubGroupOfPowerSettingsGuid, ref Guid PowerSettingGuid, out uint DcValueIndex);
+
+        private static readonly Guid _sleepSubgroup = new Guid("238C9FA8-0AAD-41ED-83F4-97BE242C8F20");
+        private static readonly Guid _standbyTimeout = new Guid("29F6C1DB-86DA-48C5-9FDB-F2B67B1F44DA");
 
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
 
@@ -127,6 +134,24 @@ namespace PowerManager
                 RefreshHolidayCache(today.Year);
 
             return _holidayCache?.Contains(today.ToString("yyyy-MM-dd")) == true;
+        }
+
+        // Returns system sleep timeout in seconds for (AC, DC). 0 = never sleep. -1 = unavailable.
+        public static (int Ac, int Dc) GetSleepTimeouts()
+        {
+            IntPtr schemePtr = IntPtr.Zero;
+            try
+            {
+                if (PowerGetActiveScheme(IntPtr.Zero, out schemePtr) != 0) return (-1, -1);
+                Guid scheme = Marshal.PtrToStructure<Guid>(schemePtr);
+                var sub = _sleepSubgroup;
+                var setting = _standbyTimeout;
+                PowerReadACValueIndex(IntPtr.Zero, ref scheme, ref sub, ref setting, out uint ac);
+                PowerReadDCValueIndex(IntPtr.Zero, ref scheme, ref sub, ref setting, out uint dc);
+                return ((int)ac, (int)dc);
+            }
+            catch { return (-1, -1); }
+            finally { if (schemePtr != IntPtr.Zero) LocalFree(schemePtr); }
         }
 
         private void RefreshHolidayCache(int year)

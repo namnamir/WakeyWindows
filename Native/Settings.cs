@@ -20,6 +20,13 @@ namespace PowerManager
         [JsonPropertyName("intervalMaxSeconds")]
         public int IntervalMaxSeconds { get; set; } = 120;
 
+        // Interval expressed as % of the system sleep timeout (computed → stored in IntervalMin/MaxSeconds)
+        [JsonPropertyName("intervalMinPercent")]
+        public int IntervalMinPercent { get; set; } = 60;
+
+        [JsonPropertyName("intervalMaxPercent")]
+        public int IntervalMaxPercent { get; set; } = 80;
+
         // Simulation method: "mouse_jiggle", "key_press", or "api_only"
         [JsonPropertyName("simulationMethod")]
         public string SimulationMethod { get; set; } = "mouse_jiggle";

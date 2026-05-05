@@ -18,8 +18,11 @@ namespace PowerManager
 
         // ── General tab ────────────────────────────────────────────────────
         private CheckBox _enabledCheckBox = null!;
-        private NumericUpDown _intervalMinNumeric = null!;
-        private NumericUpDown _intervalMaxNumeric = null!;
+        private NumericUpDown _intervalMinPctNumeric = null!;
+        private NumericUpDown _intervalMaxPctNumeric = null!;
+        private Label _intervalMinTimeLabel = null!;
+        private Label _intervalMaxTimeLabel = null!;
+        private Label _sleepTimeoutInfoLabel = null!;
         private ComboBox _simulationMethodCombo = null!;
         private CheckBox _keepDisplayOnCheckBox = null!;
 
@@ -372,7 +375,7 @@ namespace PowerManager
         private TabPage BuildGeneralTab()
         {
             var page = new TabPage("⚙  General");
-            var layout = MakeTable(page, 6);
+            var layout = MakeTable(page, 7);
 
             AddHeader(layout, "Keep-Alive");
 
@@ -380,13 +383,39 @@ namespace PowerManager
             layout.Controls.Add(SpanLabel(""));
             layout.Controls.Add(_enabledCheckBox);
 
-            layout.Controls.Add(MakeLabel("Min interval (seconds):"));
-            _intervalMinNumeric = new NumericUpDown { Minimum = 10, Maximum = 600, Value = 60, Width = 80 };
-            layout.Controls.Add(_intervalMinNumeric);
+            // Sleep timeout info row (read-only)
+            _sleepTimeoutInfoLabel = new Label
+            {
+                Text = "reading…",
+                ForeColor = Color.FromArgb(80, 100, 140),
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Padding = new Padding(0, 5, 0, 0)
+            };
+            layout.Controls.Add(MakeLabel("Sleep timeout:"));
+            layout.Controls.Add(_sleepTimeoutInfoLabel);
 
-            layout.Controls.Add(MakeLabel("Max interval (seconds):"));
-            _intervalMaxNumeric = new NumericUpDown { Minimum = 30, Maximum = 900, Value = 120, Width = 80 };
-            layout.Controls.Add(_intervalMaxNumeric);
+            // Min % row
+            var minFlow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true };
+            _intervalMinPctNumeric = new NumericUpDown { Minimum = 10, Maximum = 95, Value = 60, Width = 55 };
+            _intervalMinPctNumeric.ValueChanged += (s, e) => RefreshIntervalControls();
+            _intervalMinTimeLabel = new Label { Text = "→ —", ForeColor = Color.Gray, AutoSize = true, Margin = new Padding(4, 5, 0, 0) };
+            minFlow.Controls.Add(_intervalMinPctNumeric);
+            minFlow.Controls.Add(new Label { Text = "%", AutoSize = true, Margin = new Padding(2, 5, 8, 0) });
+            minFlow.Controls.Add(_intervalMinTimeLabel);
+            layout.Controls.Add(MakeLabel("Min interval (%):"));
+            layout.Controls.Add(minFlow);
+
+            // Max % row
+            var maxFlow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true };
+            _intervalMaxPctNumeric = new NumericUpDown { Minimum = 15, Maximum = 98, Value = 80, Width = 55 };
+            _intervalMaxPctNumeric.ValueChanged += (s, e) => RefreshIntervalControls();
+            _intervalMaxTimeLabel = new Label { Text = "→ —", ForeColor = Color.Gray, AutoSize = true, Margin = new Padding(4, 5, 0, 0) };
+            maxFlow.Controls.Add(_intervalMaxPctNumeric);
+            maxFlow.Controls.Add(new Label { Text = "%", AutoSize = true, Margin = new Padding(2, 5, 8, 0) });
+            maxFlow.Controls.Add(_intervalMaxTimeLabel);
+            layout.Controls.Add(MakeLabel("Max interval (%):"));
+            layout.Controls.Add(maxFlow);
 
             layout.Controls.Add(MakeLabel("Simulation method:"));
             _simulationMethodCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
@@ -662,7 +691,7 @@ namespace PowerManager
                 _countdownLabel.Text = t.TotalSeconds >= 60
                     ? $"{(int)t.TotalMinutes}m {t.Seconds:D2}s"
                     : $"{(int)t.TotalSeconds}s";
-                _intervalLabel.Text = $"interval: {stats.CurrentIntervalSeconds}s";
+                _intervalLabel.Text = $"interval: {stats.CurrentIntervalSeconds}s{BuildSleepInfo(stats.SleepTimeoutAcSeconds, stats.SleepTimeoutDcSeconds)}";
                 _nextAtLabel.Text = stats.NextFireAt.HasValue ? $"next at {stats.NextFireAt.Value:HH:mm:ss}" : "";
 
                 double elapsed = stats.CurrentIntervalSeconds - t.TotalSeconds;
@@ -718,8 +747,9 @@ namespace PowerManager
         private void LoadSettings()
         {
             _enabledCheckBox.Checked = _settings.Enabled;
-            _intervalMinNumeric.Value = _settings.IntervalMinSeconds;
-            _intervalMaxNumeric.Value = _settings.IntervalMaxSeconds;
+            _intervalMinPctNumeric.Value = Math.Max(10, Math.Min(95, _settings.IntervalMinPercent));
+            _intervalMaxPctNumeric.Value = Math.Max(15, Math.Min(98, _settings.IntervalMaxPercent));
+            RefreshIntervalControls();
             _simulationMethodCombo.SelectedIndex = _settings.SimulationMethod switch
             {
                 "key_press" => 1,
@@ -756,16 +786,17 @@ namespace PowerManager
 
         private void OkButton_Click(object? sender, EventArgs e)
         {
-            if (_intervalMinNumeric.Value >= _intervalMaxNumeric.Value)
+            if (_intervalMinPctNumeric.Value >= _intervalMaxPctNumeric.Value)
             {
-                MessageBox.Show("Min interval must be less than max interval.", "Validation",
+                MessageBox.Show("Min % must be less than Max %.", "Validation",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
             _settings.Enabled = _enabledCheckBox.Checked;
-            _settings.IntervalMinSeconds = (int)_intervalMinNumeric.Value;
-            _settings.IntervalMaxSeconds = (int)_intervalMaxNumeric.Value;
+            _settings.IntervalMinPercent = (int)_intervalMinPctNumeric.Value;
+            _settings.IntervalMaxPercent = (int)_intervalMaxPctNumeric.Value;
+            // IntervalMinSeconds / MaxSeconds are recomputed from % by RecomputeIntervalSeconds() in MainForm
             _settings.SimulationMethod = _simulationMethodCombo.SelectedIndex switch
             {
                 1 => "key_press",
@@ -924,6 +955,47 @@ namespace PowerManager
 
         private static Label MakeStatValue(string text) =>
             new Label { Text = text, ForeColor = Color.FromArgb(33, 33, 33), AutoSize = true, Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold), Margin = new Padding(0, 3, 10, 0) };
+
+        // Reads current sleep timeouts and refreshes the sleep-timeout info label
+        // and the computed-time labels next to the percentage spinners.
+        private void RefreshIntervalControls()
+        {
+            var (ac, dc) = ActivityDetector.GetSleepTimeouts();
+
+            int baseSeconds;
+            string baseLabel;
+            if      (ac > 0 && dc > 0) { baseSeconds = Math.Min(ac, dc); baseLabel = $"→  base {FormatSec(baseSeconds)}"; }
+            else if (ac > 0)            { baseSeconds = ac;               baseLabel = $"→  base {FormatSec(ac)} (AC)"; }
+            else if (dc > 0)            { baseSeconds = dc;               baseLabel = $"→  base {FormatSec(dc)} (DC)"; }
+            else if (ac == 0 && dc == 0){ baseSeconds = 300;              baseLabel = "→  using 5m base (never sleep)"; }
+            else                        { baseSeconds = 300;              baseLabel = "→  using 5m base (unavailable)"; }
+
+            string FormatT(int t) => t < 0 ? "—" : t == 0 ? "never" : FormatSec(t);
+            string acPart = ac >= 0 ? $"AC: {FormatT(ac)}" : "";
+            string dcPart = dc >= 0 ? $"DC: {FormatT(dc)}" : "";
+            string combined = (acPart.Length > 0 && dcPart.Length > 0) ? $"{acPart}  ·  {dcPart}"
+                            : acPart.Length > 0 ? acPart : dcPart.Length > 0 ? dcPart : "—";
+            _sleepTimeoutInfoLabel.Text = $"{combined}   {baseLabel}";
+
+            int minS = Math.Max(10, (int)Math.Round(baseSeconds * (double)_intervalMinPctNumeric.Value / 100));
+            int maxS = Math.Max(minS + 1, (int)Math.Round(baseSeconds * (double)_intervalMaxPctNumeric.Value / 100));
+            _intervalMinTimeLabel.Text = $"→ {FormatSec(minS)}";
+            _intervalMaxTimeLabel.Text = $"→ {FormatSec(maxS)}";
+        }
+
+        private static string BuildSleepInfo(int ac, int dc)
+        {
+            if (ac < 0 && dc < 0) return "";
+            string FormatT(int t) => t < 0 ? "—" : t == 0 ? "never" : FormatSec(t);
+            string acPart = ac >= 0 ? $"AC {FormatT(ac)}" : "";
+            string dcPart = dc >= 0 ? $"DC {FormatT(dc)}" : "";
+            string combined = (acPart.Length > 0 && dcPart.Length > 0) ? $"{acPart} · {dcPart}"
+                            : acPart.Length > 0 ? acPart : dcPart;
+            return $"  ·  sleep: {combined}";
+        }
+
+        private static string FormatSec(int s) =>
+            s >= 60 ? $"{s / 60}m{(s % 60 > 0 ? $" {s % 60}s" : "")}" : $"{s}s";
 
         private sealed class GradientPanel : Panel
         {
