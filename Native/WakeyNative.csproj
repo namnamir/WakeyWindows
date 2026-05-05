@@ -16,7 +16,7 @@
     <Description>System power management utility</Description>
     <Company>Microsoft Corporation</Company>
     <Copyright>Copyright © 2026</Copyright>
-    <Version>2.1.0</Version>
+    <Version>2.1.1</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     
     <!-- Set to true for single-file deployment -->
