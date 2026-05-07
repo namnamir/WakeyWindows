@@ -41,6 +41,7 @@ namespace PowerManager
         private bool _isPaused;
         private bool _isUserActive;
         private bool _wasWithinHours = true;
+        private bool _wasHoliday;
         private DateTime _lastKeepAlive = DateTime.MinValue;
         private int _currentInterval;
         private DateTime _timerStartedAt = DateTime.Now;
@@ -196,6 +197,7 @@ namespace PowerManager
             // Notify on working-hours boundary transitions
             if (!withinHours && _wasWithinHours)
             {
+                KeepAwake.AllowSleep();
                 ShowNotification("WakeyWindows", $"Outside working hours — resumes at {_settings.WorkingHoursStart}.");
                 AddLog("🕐", $"Outside working hours · resumes at {_settings.WorkingHoursStart}", LogLevel.Warning);
             }
@@ -213,10 +215,17 @@ namespace PowerManager
                 return;
             }
 
-            if (_activityDetector.IsTodayHoliday())
+            bool isHoliday = _activityDetector.IsTodayHoliday();
+            if (isHoliday && !_wasHoliday)
+            {
+                KeepAwake.AllowSleep();
+                ShowNotification("WakeyWindows", "Public holiday — keep-alive paused until tomorrow.");
+                AddLog("🎉", $"Public holiday · {_settings.HolidayCountryCode} · resumes tomorrow", LogLevel.Warning);
+            }
+            _wasHoliday = isHoliday;
+            if (isHoliday)
             {
                 UpdateTrayStatus("Holiday — paused");
-                AddLog("🎉", $"Public holiday · {_settings.HolidayCountryCode} · resumes tomorrow", LogLevel.Warning);
                 SetNextInterval();
                 return;
             }
