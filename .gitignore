@@ -2,6 +2,7 @@
 \log
 \logs
 Logs/
+.claude/
 
 # C# Native build artifacts
 Native/bin/

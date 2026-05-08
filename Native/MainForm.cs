@@ -25,6 +25,12 @@ namespace PowerManager
         public bool IsEnabled { get; init; }
         public int SleepTimeoutAcSeconds { get; init; }
         public int SleepTimeoutDcSeconds { get; init; }
+
+        // Schedule overview (shown in Dashboard)
+        public string ScheduleRangeLine { get; init; } = "";   // e.g. "08:30 – 17:00  ·  Mon–Fri"
+        public string ScheduleStatusLine { get; init; } = "";  // e.g. "Active · ends in 2h 45m"
+        public Color ScheduleStatusColor { get; init; } = Color.Gray;
+        public string? StatusDetailLine { get; init; }         // small inline hint in status card
     }
 
     public partial class MainForm : Form
@@ -429,6 +435,50 @@ namespace PowerManager
             _trayIcon.ShowBalloonTip(4000);
         }
 
+        private string ComputeNextWorkStart()
+        {
+            if (!TimeSpan.TryParse(_settings.WorkingHoursStart, out var startTs))
+                return $"at {_settings.WorkingHoursStart}";
+
+            var today = DateTime.Today;
+            for (int i = 1; i <= 8; i++)
+            {
+                var candidate = today.AddDays(i);
+                string dayName = candidate.DayOfWeek.ToString();
+                bool isWorkDay = false;
+                foreach (var d in _settings.WorkingDays)
+                    if (d.Equals(dayName, StringComparison.OrdinalIgnoreCase)) { isWorkDay = true; break; }
+                if (!isWorkDay) continue;
+
+                string timeStr = $"{startTs.Hours:D2}:{startTs.Minutes:D2}";
+                return i == 1 ? $"tomorrow at {timeStr}" : $"{candidate:dddd} at {timeStr}";
+            }
+            return $"at {_settings.WorkingHoursStart}";
+        }
+
+        private string BuildScheduleDaysLabel()
+        {
+            if (_settings.WorkingDays == null || _settings.WorkingDays.Length == 0) return "";
+
+            string[] shortNames = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+            string[] fullNames  = { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
+
+            var parts = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < 7; i++)
+                foreach (var d in _settings.WorkingDays)
+                    if (d.Equals(fullNames[i], StringComparison.OrdinalIgnoreCase)) { parts.Add(shortNames[i]); break; }
+
+            string s = string.Join(" ", parts);
+            return s switch
+            {
+                "Mon Tue Wed Thu Fri"         => "Mon–Fri",
+                "Mon Tue Wed Thu Fri Sat"     => "Mon–Sat",
+                "Mon Tue Wed Thu Fri Sat Sun" => "Every day",
+                "Sat Sun"                     => "Weekends",
+                _                             => s
+            };
+        }
+
         public LiveStats GetLiveStats()
         {
             var now = DateTime.Now;
@@ -450,6 +500,9 @@ namespace PowerManager
                 }
             }
 
+            bool withinHours = _activityDetector.IsWithinWorkingHours();
+            bool isHoliday   = _activityDetector.IsTodayHoliday();
+
             string statusText; string statusIcon; Color statusColor;
 
             if (!_settings.Enabled)
@@ -458,12 +511,83 @@ namespace PowerManager
             { statusText = "Paused"; statusIcon = "⏸"; statusColor = Settings.ParseColor(_settings.ColorAccentPaused, Color.Orange); }
             else if (_isUserActive)
             { statusText = "User active — paused"; statusIcon = "👤"; statusColor = Settings.ParseColor(_settings.ColorAccentUserActive, Color.SteelBlue); }
-            else if (!_activityDetector.IsWithinWorkingHours())
+            else if (!withinHours)
             { statusText = "Outside working hours"; statusIcon = "🕐"; statusColor = Settings.ParseColor(_settings.ColorAccentPaused, Color.Orange); }
-            else if (_activityDetector.IsTodayHoliday())
+            else if (isHoliday)
             { statusText = "Public holiday — paused"; statusIcon = "🎉"; statusColor = Settings.ParseColor(_settings.ColorAccentPaused, Color.Orange); }
             else
             { statusText = "Active — keeping awake"; statusIcon = "✅"; statusColor = Settings.ParseColor(_settings.ColorAccentActive, Color.Green); }
+
+            // ── Schedule overview ─────────────────────────────────────────────
+            string scheduleDays = BuildScheduleDaysLabel();
+            string scheduleRangeLine = _settings.UseWorkingHours
+                ? $"{_settings.WorkingHoursStart} – {_settings.WorkingHoursEnd}  ·  {scheduleDays}"
+                : "All hours";
+
+            // Time remaining until end of working day
+            TimeSpan? timeUntilWorkEnd = null;
+            if (_settings.UseWorkingHours && withinHours && !isHoliday
+                && TimeSpan.TryParse(_settings.WorkingHoursEnd, out var endTs))
+            {
+                var rem = DateTime.Today.Add(endTs) - now;
+                if (rem.TotalSeconds > 0) timeUntilWorkEnd = rem;
+            }
+
+            string scheduleStatusLine; Color scheduleStatusColor;
+            Color colorActive = Settings.ParseColor(_settings.ColorAccentActive, Color.FromArgb(76, 175, 80));
+            Color colorPaused = Settings.ParseColor(_settings.ColorAccentPaused, Color.Orange);
+
+            if (!_settings.UseWorkingHours)
+            { scheduleStatusLine = "No schedule — runs all day"; scheduleStatusColor = Color.Gray; }
+            else if (!_settings.Enabled)
+            { scheduleStatusLine = "Disabled"; scheduleStatusColor = Color.Gray; }
+            else if (timeUntilWorkEnd.HasValue && !_isPaused && !_isUserActive)
+            {
+                var t = timeUntilWorkEnd.Value;
+                string rem = t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes:D2}m" : $"{t.Minutes}m {t.Seconds:D2}s";
+                scheduleStatusLine = $"Active · ends at {_settings.WorkingHoursEnd}  ·  {rem} remaining";
+                scheduleStatusColor = colorActive;
+            }
+            else if (_isPaused)
+            {
+                scheduleStatusLine = withinHours
+                    ? $"Manual pause · working hours active until {_settings.WorkingHoursEnd}"
+                    : $"Manual pause · outside working hours";
+                scheduleStatusColor = colorPaused;
+            }
+            else if (isHoliday)
+            { scheduleStatusLine = $"Public holiday · resumes {ComputeNextWorkStart()}"; scheduleStatusColor = colorPaused; }
+            else if (!withinHours)
+            { scheduleStatusLine = $"Outside working hours · resumes {ComputeNextWorkStart()}"; scheduleStatusColor = colorPaused; }
+            else if (_isUserActive)
+            {
+                scheduleStatusLine = timeUntilWorkEnd.HasValue
+                    ? $"User active (auto-paused) · ends at {_settings.WorkingHoursEnd}"
+                    : $"User active (auto-paused)";
+                scheduleStatusColor = Settings.ParseColor(_settings.ColorAccentUserActive, Color.SteelBlue);
+            }
+            else
+            { scheduleStatusLine = $"Active until {_settings.WorkingHoursEnd}"; scheduleStatusColor = colorActive; }
+
+            // Small inline detail shown in the status card
+            string? statusDetailLine = null;
+            if (_settings.Enabled)
+            {
+                if (_isPaused)
+                    statusDetailLine = "Manual pause — click Resume to continue";
+                else if (_isUserActive)
+                    statusDetailLine = "Auto-paused · resumes when idle";
+                else if (_settings.UseWorkingHours && !withinHours)
+                    statusDetailLine = $"Resumes {ComputeNextWorkStart()}";
+                else if (_settings.UseWorkingHours && isHoliday)
+                    statusDetailLine = $"Public holiday · resumes {ComputeNextWorkStart()}";
+                else if (timeUntilWorkEnd.HasValue)
+                {
+                    var t = timeUntilWorkEnd.Value;
+                    string rem = t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes:D2}m" : $"{t.Minutes}m {t.Seconds:D2}s";
+                    statusDetailLine = $"Ends at {_settings.WorkingHoursEnd}  ·  {rem} remaining";
+                }
+            }
 
             return new LiveStats
             {
@@ -479,7 +603,11 @@ namespace PowerManager
                 RecentLog = _logEntries.AsReadOnly(),
                 IsEnabled = _settings.Enabled,
                 SleepTimeoutAcSeconds = _sleepTimeoutAc,
-                SleepTimeoutDcSeconds = _sleepTimeoutDc
+                SleepTimeoutDcSeconds = _sleepTimeoutDc,
+                ScheduleRangeLine = scheduleRangeLine,
+                ScheduleStatusLine = scheduleStatusLine,
+                ScheduleStatusColor = scheduleStatusColor,
+                StatusDetailLine = statusDetailLine
             };
         }
 

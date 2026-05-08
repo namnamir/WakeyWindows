@@ -53,6 +53,7 @@ namespace PowerManager
         private Label _statusIconLabel = null!;
         private Label _statusTextLabel = null!;
         private Label _methodBadgeLabel = null!;
+        private Label _statusDetailLabel = null!;
         private Label _sessionUptimeLabel = null!;
         private Label _keepAliveCountLabel = null!;
         private Label _countdownLabel = null!;
@@ -60,6 +61,9 @@ namespace PowerManager
         private Label _intervalLabel = null!;
         private Panel _progressFill = null!;
         private Panel _progressContainer = null!;
+        private Panel _scheduleAccentBar = null!;
+        private Label _scheduleRangeLabel = null!;
+        private Label _scheduleStatusLabel = null!;
         private RichTextBox _logBox = null!;
         private int _lastLogCount = -1;
         private double _lastProgressPct = 0;
@@ -165,33 +169,40 @@ namespace PowerManager
 
         private TabPage BuildDashboardTab()
         {
-            var page = new TabPage("🖥  Dashboard") { BackColor = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250)) };
+            var bg = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250));
+            var page = new TabPage("🖥  Dashboard") { BackColor = bg };
 
             var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 8,
+                RowCount = 11,
                 Padding = new Padding(12, 8, 12, 8),
-                BackColor = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250))
+                BackColor = bg
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // status header
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // status card
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));   // spacer
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // next header
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // countdown card
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));   // spacer
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // log header
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));  // log (fills rest)
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // 0  status header
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 1  status card
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));   // 2  spacer
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // 3  schedule header
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 4  schedule card
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));   // 5  spacer
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // 6  next header
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 7  countdown card
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));   // 8  spacer
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // 9  log header
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));  // 10 log (fills rest)
 
             layout.Controls.Add(MakeSectionHeader("📊  Current Status"), 0, 0);
             layout.Controls.Add(BuildStatusCard(), 0, 1);
             layout.Controls.Add(new Label(), 0, 2);
-            layout.Controls.Add(MakeSectionHeader("⏱  Next Keep-Alive"), 0, 3);
-            layout.Controls.Add(BuildCountdownCard(), 0, 4);
+            layout.Controls.Add(MakeSectionHeader("📅  Schedule"), 0, 3);
+            layout.Controls.Add(BuildScheduleCard(), 0, 4);
             layout.Controls.Add(new Label(), 0, 5);
-            layout.Controls.Add(MakeSectionHeader("📋  Activity Log"), 0, 6);
+            layout.Controls.Add(MakeSectionHeader("⏱  Next Keep-Alive"), 0, 6);
+            layout.Controls.Add(BuildCountdownCard(), 0, 7);
+            layout.Controls.Add(new Label(), 0, 8);
+            layout.Controls.Add(MakeSectionHeader("📋  Activity Log"), 0, 9);
 
             _logBox = new RichTextBox
             {
@@ -205,7 +216,7 @@ namespace PowerManager
                 WordWrap = false,
                 DetectUrls = false
             };
-            layout.Controls.Add(_logBox, 0, 7);
+            layout.Controls.Add(_logBox, 0, 10);
 
             page.Controls.Add(layout);
             return page;
@@ -273,6 +284,18 @@ namespace PowerManager
                 Margin = new Padding(0, 0, 0, 4)
             };
             textPanel.Controls.Add(_methodBadgeLabel);
+
+            _statusDetailLabel = new Label
+            {
+                Text = "",
+                Font = new Font("Segoe UI", 8f),
+                ForeColor = Color.FromArgb(70, 110, 60),
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 2),
+                Visible = false
+            };
+            textPanel.Controls.Add(_statusDetailLabel);
+
             content.Controls.Add(textPanel, 1, 0);
 
             var statsFlow = new FlowLayoutPanel
@@ -363,6 +386,48 @@ namespace PowerManager
             };
             content.Controls.Add(_intervalLabel, 0, 2);
             content.SetColumnSpan(_intervalLabel, 2);
+
+            card.Controls.Add(content);
+            return card;
+        }
+
+        private Panel BuildScheduleCard()
+        {
+            var card = MakeCard();
+
+            _scheduleAccentBar = new Panel { Width = 5, Dock = DockStyle.Left, BackColor = Color.Gray };
+            card.Controls.Add(_scheduleAccentBar);
+
+            var content = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(12, 8, 8, 8),
+                BackColor = Color.Transparent
+            };
+
+            _scheduleRangeLabel = new Label
+            {
+                Text = "—",
+                Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(33, 33, 33),
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 3)
+            };
+            content.Controls.Add(_scheduleRangeLabel);
+
+            _scheduleStatusLabel = new Label
+            {
+                Text = "",
+                Font = new Font("Segoe UI", 8.5f),
+                ForeColor = Color.FromArgb(80, 80, 80),
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 0)
+            };
+            content.Controls.Add(_scheduleStatusLabel);
 
             card.Controls.Add(content);
             return card;
@@ -679,6 +744,22 @@ namespace PowerManager
             _statusTextLabel.Text = stats.StatusText;
             _statusTextLabel.ForeColor = stats.StatusColor;
             _methodBadgeLabel.Text = $"Mode: {stats.ActiveMethod}";
+
+            if (!string.IsNullOrEmpty(stats.StatusDetailLine))
+            {
+                _statusDetailLabel.Text = stats.StatusDetailLine;
+                _statusDetailLabel.ForeColor = stats.ScheduleStatusColor;
+                _statusDetailLabel.Visible = true;
+            }
+            else
+            {
+                _statusDetailLabel.Visible = false;
+            }
+
+            _scheduleAccentBar.BackColor = stats.ScheduleStatusColor;
+            _scheduleRangeLabel.Text = stats.ScheduleRangeLine;
+            _scheduleStatusLabel.Text = stats.ScheduleStatusLine;
+            _scheduleStatusLabel.ForeColor = stats.ScheduleStatusColor;
 
             var up = stats.SessionUptime;
             _sessionUptimeLabel.Text = up.TotalHours >= 1 ? $"{(int)up.TotalHours}h {up.Minutes}m"
