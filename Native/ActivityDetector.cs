@@ -36,6 +36,7 @@ namespace PowerManager
         private Point _lastMousePosition;
         private DateTime _lastActivityTime;
         private DateTime _lastJiggleTime = DateTime.MinValue;
+        private uint _lastJiggleTick = 0;
         private readonly Settings _settings;
 
         // Holiday cache
@@ -54,13 +55,18 @@ namespace PowerManager
         {
             var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
             if (GetLastInputInfo(ref info))
-                return (int)((GetTickCount() - info.dwTime) / 1000);
+            {
+                uint currentTick = GetTickCount();
+                uint diff = unchecked(currentTick - info.dwTime);
+                return (int)(diff / 1000);
+            }
             return 0;
         }
 
         public void MarkAsJiggle()
         {
             _lastJiggleTime = DateTime.Now;
+            _lastJiggleTick = GetTickCount();
             _lastMousePosition = GetCurrentMousePosition();
         }
 
@@ -68,22 +74,41 @@ namespace PowerManager
         {
             if (!_settings.DetectUserActivity) return false;
 
-            bool recentJiggle = (DateTime.Now - _lastJiggleTime).TotalSeconds < 3;
-            int idleSeconds = GetIdleTimeSeconds();
-            if (idleSeconds < _settings.IdleTimeoutSeconds && !recentJiggle)
+            // 1. Check physical mouse movement (primary indicator of human presence)
+            Point currentPos = GetCurrentMousePosition();
+            if (currentPos != Point.Empty && _lastMousePosition != Point.Empty)
             {
-                _lastActivityTime = DateTime.Now;
-                return true;
+                int dx = Math.Abs(currentPos.X - _lastMousePosition.X);
+                int dy = Math.Abs(currentPos.Y - _lastMousePosition.Y);
+                if (dx > _settings.MouseMovementThreshold || dy > _settings.MouseMovementThreshold)
+                {
+                    _lastMousePosition = currentPos;
+                    _lastActivityTime = DateTime.Now;
+                    return true;
+                }
             }
 
-            Point currentPos = GetCurrentMousePosition();
-            int dx = Math.Abs(currentPos.X - _lastMousePosition.X);
-            int dy = Math.Abs(currentPos.Y - _lastMousePosition.Y);
-            if (dx > _settings.MouseMovementThreshold || dy > _settings.MouseMovementThreshold)
+            // 2. Check system-wide idle input timer via GetLastInputInfo
+            var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
+            if (GetLastInputInfo(ref info))
             {
-                _lastMousePosition = currentPos;
-                _lastActivityTime = DateTime.Now;
-                return true;
+                uint currentTick = GetTickCount();
+                uint idleMs = unchecked(currentTick - info.dwTime);
+
+                // If the most recent input event corresponds to our synthetic jiggle/keypress,
+                // do NOT treat it as user activity.
+                bool isSyntheticEvent = _lastJiggleTick > 0 &&
+                    (unchecked(info.dwTime - _lastJiggleTick) <= 1500 || unchecked(_lastJiggleTick - info.dwTime) <= 500);
+
+                if (!isSyntheticEvent)
+                {
+                    int idleSeconds = (int)(idleMs / 1000);
+                    if (idleSeconds < _settings.IdleTimeoutSeconds)
+                    {
+                        _lastActivityTime = DateTime.Now;
+                        return true;
+                    }
+                }
             }
 
             return false;

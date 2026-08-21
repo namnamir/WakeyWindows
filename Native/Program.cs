@@ -12,12 +12,20 @@ namespace PowerManager
         static void Main(string[] args)
         {
             // Ensure only one instance runs
-            const string mutexName = "Global\\PowerManagerInstance";
-            _mutex = new Mutex(true, mutexName, out bool createdNew);
+            bool createdNew = false;
+            try
+            {
+                _mutex = new Mutex(true, mutexName, out createdNew);
+            }
+            catch (AbandonedMutexException)
+            {
+                // Previous instance terminated unexpectedly; this instance now owns the mutex
+                createdNew = true;
+            }
 
             if (!createdNew)
             {
-                // Another instance is already running
+                // Another instance is actively running
                 return;
             }
 
@@ -29,7 +37,11 @@ namespace PowerManager
             }
             finally
             {
-                _mutex?.ReleaseMutex();
+                try
+                {
+                    _mutex?.ReleaseMutex();
+                }
+                catch { }
                 _mutex?.Dispose();
             }
         }

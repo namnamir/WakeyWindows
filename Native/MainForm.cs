@@ -186,11 +186,17 @@ namespace PowerManager
         private void SetNextInterval()
         {
             int baseInterval = _random.Next(_settings.IntervalMinSeconds, _settings.IntervalMaxSeconds + 1);
-            int jitter = _random.Next(-10, 21);
-            if (_random.Next(1, 11) == 1) jitter += _random.Next(30, 61);
-
+            int jitter = _random.Next(-5, 11);
             _currentInterval = Math.Max(_settings.IntervalMinSeconds, baseInterval + jitter);
-            _keepAliveTimer.Interval = _currentInterval * 1000;
+
+            // Safety clamp: if sleep timeout is known, guarantee the next keepalive triggers well before system sleep
+            int effectiveSleepTimeout = Math.Min(_sleepTimeoutAc > 0 ? _sleepTimeoutAc : int.MaxValue, _sleepTimeoutDc > 0 ? _sleepTimeoutDc : int.MaxValue);
+            if (effectiveSleepTimeout != int.MaxValue && effectiveSleepTimeout > 15)
+            {
+                _currentInterval = Math.Min(_currentInterval, Math.Max(10, (int)(effectiveSleepTimeout * 0.85)));
+            }
+
+            _keepAliveTimer.Interval = Math.Max(5, _currentInterval) * 1000;
             _timerStartedAt = DateTime.Now;
         }
 
