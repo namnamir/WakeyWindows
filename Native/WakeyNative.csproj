@@ -8,15 +8,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     
     <!-- ============================================================== -->
-    <!-- CUSTOMIZE THESE VALUES BEFORE BUILDING                         -->
+    <!-- APPLICATION METADATA & IDENTITY                                -->
     <!-- ============================================================== -->
-    <AssemblyName>PowerManager</AssemblyName>
+    <AssemblyName>WakeyWindows</AssemblyName>
     <RootNamespace>PowerManager</RootNamespace>
-    <Product>Power Manager</Product>
-    <Description>System power management utility</Description>
-    <Company>Microsoft Corporation</Company>
-    <Copyright>Copyright © 2026</Copyright>
+    <Product>WakeyWindows</Product>
+    <Description>WakeyWindows - Lightweight System Keep-Alive Manager</Description>
+    <Company>Ali Nikouei</Company>
+    <Copyright>Copyright © 2026 Ali Nikouei</Copyright>
     <Version>2.2.0</Version>
+    <AssemblyTitle>WakeyWindows</AssemblyTitle>
+    <NeutralLanguage>en</NeutralLanguage>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     
     <!-- Set to true for single-file deployment -->

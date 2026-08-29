@@ -53,6 +53,7 @@ namespace PowerManager
         private Label _statusIconLabel = null!;
         private Label _statusTextLabel = null!;
         private Label _methodBadgeLabel = null!;
+        private Label _scheduleStatusLabel = null!;
         private Label _statusDetailLabel = null!;
         private Label _sessionUptimeLabel = null!;
         private Label _keepAliveCountLabel = null!;
@@ -61,9 +62,6 @@ namespace PowerManager
         private Label _intervalLabel = null!;
         private Panel _progressFill = null!;
         private Panel _progressContainer = null!;
-        private Panel _scheduleAccentBar = null!;
-        private Label _scheduleRangeLabel = null!;
-        private Label _scheduleStatusLabel = null!;
         private RichTextBox _logBox = null!;
         private int _lastLogCount = -1;
         private double _lastProgressPct = 0;
@@ -88,63 +86,89 @@ namespace PowerManager
         private void InitializeComponent()
         {
             Text = $"WakeyWindows  v{AppVersion}";
-            MinimumSize = new Size(520, 560);
-            Size = new Size(580, 660);
+            MinimumSize = new Size(540, 580);
+            Size = new Size(600, 680);
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
             ShowInTaskbar = true;
-            BackColor = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250));
+            BackColor = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(248, 250, 252));
 
-            // ── Header ─────────────────────────────────────────────────────
+            // Set Form and Taskbar Icon
+            try
+            {
+                Icon? appIcon = null;
+                string localIco = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+                if (File.Exists(localIco)) appIcon = new Icon(localIco);
+                this.Icon = appIcon ?? Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
+                this.ShowIcon = true;
+            }
+            catch
+            {
+                this.Icon = SystemIcons.Application;
+            }
+
+            // ── Modern Flat Header ─────────────────────────────────────────
             var header = new GradientPanel(
-                Settings.ParseColor(_settings.ColorHeaderGradientStart, Color.FromArgb(28, 48, 100)),
-                Settings.ParseColor(_settings.ColorHeaderGradientEnd,   Color.FromArgb(18, 30, 72))
-            ) { Dock = DockStyle.Top, Height = 72 };
+                Settings.ParseColor(_settings.ColorHeaderGradientStart, Color.FromArgb(15, 23, 42)),  // Slate 900
+                Settings.ParseColor(_settings.ColorHeaderGradientEnd,   Color.FromArgb(30, 41, 59))   // Slate 800
+            ) { Dock = DockStyle.Top, Height = 68 };
             header.Controls.Add(new Label
             {
-                Text = "💤  WakeyWindows",
-                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
+                Text = "⚡  WakeyWindows",
+                Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = Color.Transparent,
                 AutoSize = true,
-                Location = new Point(16, 12)
+                Location = new Point(18, 12)
             });
             header.Controls.Add(new Label
             {
                 Text = $"System Keep-Alive Manager  ·  v{AppVersion}",
                 Font = new Font("Segoe UI", 8.5f),
-                ForeColor = Color.FromArgb(180, 215, 255),
+                ForeColor = Color.FromArgb(148, 163, 184), // Slate 400
                 BackColor = Color.Transparent,
                 AutoSize = true,
-                Location = new Point(19, 40)
+                Location = new Point(20, 38)
             });
 
-            // ── Button panel ───────────────────────────────────────────────
+            // ── Bottom Button Panel ─────────────────────────────────────────
             var buttonPanel = new Panel
             {
                 Dock = DockStyle.Bottom,
-                Height = 48,
-                BackColor = Color.FromArgb(232, 234, 238)
+                Height = 52,
+                BackColor = Color.FromArgb(241, 245, 249) // Slate 100
             };
-            var saveButton = new Button { Text = "Save", Size = new Size(90, 30), FlatStyle = FlatStyle.System };
-            var cancelButton = new Button { Text = "Cancel", Size = new Size(90, 30), DialogResult = DialogResult.Cancel, FlatStyle = FlatStyle.System };
+            var saveButton = new Button
+            {
+                Text = "Save Changes",
+                Size = new Size(110, 32),
+                FlatStyle = FlatStyle.System,
+                Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold)
+            };
+            var cancelButton = new Button
+            {
+                Text = "Cancel",
+                Size = new Size(85, 32),
+                DialogResult = DialogResult.Cancel,
+                FlatStyle = FlatStyle.System
+            };
             saveButton.Click += OkButton_Click;
             buttonPanel.Controls.Add(saveButton);
             buttonPanel.Controls.Add(cancelButton);
             buttonPanel.Resize += (s, e) =>
             {
-                int y = (buttonPanel.ClientSize.Height - 30) / 2;
-                cancelButton.Location = new Point(buttonPanel.ClientSize.Width - 100, y);
-                saveButton.Location = new Point(buttonPanel.ClientSize.Width - 200, y);
+                int y = (buttonPanel.ClientSize.Height - 32) / 2;
+                cancelButton.Location = new Point(buttonPanel.ClientSize.Width - 98, y);
+                saveButton.Location = new Point(buttonPanel.ClientSize.Width - 216, y);
             };
 
-            // ── Tab control ────────────────────────────────────────────────
+            // ── Tab Control ────────────────────────────────────────────────
             var tabControl = new TabControl
             {
                 Dock = DockStyle.Fill,
                 Font = new Font("Segoe UI", 9f),
-                Padding = new Point(10, 4)
+                Padding = new Point(12, 5)
             };
             tabControl.TabPages.Add(BuildDashboardTab());
             tabControl.TabPages.Add(BuildGeneralTab());
@@ -153,8 +177,6 @@ namespace PowerManager
             tabControl.TabPages.Add(BuildDisplayTab());
             tabControl.TabPages.Add(BuildAboutTab());
 
-            // Fill must be added BEFORE edge-docked controls so WinForms
-            // dock layout reserves Top/Bottom space first, then fills the rest.
             Controls.Add(tabControl);
             Controls.Add(buttonPanel);
             Controls.Add(header);
@@ -164,156 +186,167 @@ namespace PowerManager
         }
 
         // ════════════════════════════════════════════════════════════════════
-        // DASHBOARD TAB
+        // DASHBOARD TAB (MODERN MERGED LAYOUT)
         // ════════════════════════════════════════════════════════════════════
 
         private TabPage BuildDashboardTab()
         {
-            var bg = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(245, 247, 250));
+            var bg = Settings.ParseColor(_settings.ColorFormBackground, Color.FromArgb(248, 250, 252));
             var page = new TabPage("🖥  Dashboard") { BackColor = bg };
 
             var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 11,
-                Padding = new Padding(12, 8, 12, 8),
+                RowCount = 5,
+                Padding = new Padding(12, 10, 12, 10),
                 BackColor = bg
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // 0  status header
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 1  status card
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));   // 2  spacer
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // 3  schedule header
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 4  schedule card
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));   // 5  spacer
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // 6  next header
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 7  countdown card
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));   // 8  spacer
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));  // 9  log header
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));  // 10 log (fills rest)
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // 0: Merged Status & Schedule Hero Card
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));  // 1: spacer
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // 2: Countdown Card
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));  // 3: spacer
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // 4: Expanded Activity Log (fills majority)
 
-            layout.Controls.Add(MakeSectionHeader("📊  Current Status"), 0, 0);
-            layout.Controls.Add(BuildStatusCard(), 0, 1);
-            layout.Controls.Add(new Label(), 0, 2);
-            layout.Controls.Add(MakeSectionHeader("📅  Schedule"), 0, 3);
-            layout.Controls.Add(BuildScheduleCard(), 0, 4);
-            layout.Controls.Add(new Label(), 0, 5);
-            layout.Controls.Add(MakeSectionHeader("⏱  Next Keep-Alive"), 0, 6);
-            layout.Controls.Add(BuildCountdownCard(), 0, 7);
-            layout.Controls.Add(new Label(), 0, 8);
-            layout.Controls.Add(MakeSectionHeader("📋  Activity Log"), 0, 9);
-
-            _logBox = new RichTextBox
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Settings.ParseColor(_settings.ColorLogBackground, Color.FromArgb(30, 30, 30)),
-                ForeColor = Settings.ParseColor(_settings.ColorLogInfo, Color.FromArgb(220, 220, 220)),
-                Font = new Font(_settings.LogFontFamily, _settings.LogFontSize),
-                ScrollBars = RichTextBoxScrollBars.Vertical,
-                WordWrap = false,
-                DetectUrls = false
-            };
-            layout.Controls.Add(_logBox, 0, 10);
+            layout.Controls.Add(BuildHeroStatusCard(), 0, 0);
+            layout.Controls.Add(new Label(), 0, 1);
+            layout.Controls.Add(BuildCountdownCard(), 0, 2);
+            layout.Controls.Add(new Label(), 0, 3);
+            layout.Controls.Add(BuildLogCard(), 0, 4);
 
             page.Controls.Add(layout);
             return page;
         }
 
-        private Panel BuildStatusCard()
+        private Panel BuildHeroStatusCard()
         {
             var card = MakeCard();
 
-            _accentBar = new Panel { Width = 5, Dock = DockStyle.Left, BackColor = Settings.ParseColor(_settings.ColorAccentActive, Color.FromArgb(76, 175, 80)) };
+            _accentBar = new Panel { Width = 5, Dock = DockStyle.Left, BackColor = Settings.ParseColor(_settings.ColorAccentActive, Color.FromArgb(16, 185, 129)) };
             card.Controls.Add(_accentBar);
 
             var content = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 2,
-                Padding = new Padding(10, 8, 8, 8),
+                RowCount = 1,
+                Padding = new Padding(12, 10, 12, 10),
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink
             };
-            content.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
             content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            content.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            _statusIconLabel = new Label
-            {
-                Text = "✅",
-                Font = new Font("Segoe UI", 20f),
-                AutoSize = true,
-                TextAlign = ContentAlignment.TopCenter,
-                Margin = new Padding(0, 2, 0, 0)
-            };
-            content.Controls.Add(_statusIconLabel, 0, 0);
-            content.SetRowSpan(_statusIconLabel, 2);
-
-            var textPanel = new FlowLayoutPanel
+            // Left: Status Headline & Dynamic Badges
+            var leftFlow = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.TopDown,
                 WrapContents = false,
                 AutoSize = true,
                 Dock = DockStyle.Fill,
-                BackColor = Color.Transparent,
                 Margin = new Padding(0)
             };
-            _statusTextLabel = new Label
-            {
-                Text = "Active — keeping awake",
-                Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(33, 33, 33),
-                AutoSize = true,
-                Margin = new Padding(0, 2, 0, 2)
-            };
-            textPanel.Controls.Add(_statusTextLabel);
 
-            _methodBadgeLabel = new Label
-            {
-                Text = "Mode: —",
-                Font = new Font("Segoe UI", 8f),
-                ForeColor = Color.FromArgb(100, 100, 120),
-                BackColor = Color.FromArgb(235, 237, 245),
-                AutoSize = true,
-                Padding = new Padding(4, 2, 4, 2),
-                Margin = new Padding(0, 0, 0, 4)
-            };
-            textPanel.Controls.Add(_methodBadgeLabel);
-
-            _statusDetailLabel = new Label
-            {
-                Text = "",
-                Font = new Font("Segoe UI", 8f),
-                ForeColor = Color.FromArgb(70, 110, 60),
-                AutoSize = true,
-                Margin = new Padding(0, 0, 0, 2),
-                Visible = false
-            };
-            textPanel.Controls.Add(_statusDetailLabel);
-
-            content.Controls.Add(textPanel, 1, 0);
-
-            var statsFlow = new FlowLayoutPanel
+            var titleFlow = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = false,
                 AutoSize = true,
-                BackColor = Color.Transparent,
+                Margin = new Padding(0, 0, 0, 4)
+            };
+            _statusIconLabel = new Label
+            {
+                Text = "🟢",
+                Font = new Font("Segoe UI", 16f),
+                AutoSize = true,
+                Margin = new Padding(0, 0, 6, 0)
+            };
+            _statusTextLabel = new Label
+            {
+                Text = "Active — keeping awake",
+                Font = new Font("Segoe UI Semibold", 11.5f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                AutoSize = true,
+                Margin = new Padding(0, 2, 0, 0)
+            };
+            titleFlow.Controls.Add(_statusIconLabel);
+            titleFlow.Controls.Add(_statusTextLabel);
+            leftFlow.Controls.Add(titleFlow);
+
+            var badgesFlow = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoSize = true,
                 Margin = new Padding(0)
             };
-            statsFlow.Controls.Add(MakeStatCaption("Session:"));
+
+            _methodBadgeLabel = new Label
+            {
+                Text = "Mode: Mouse jiggle",
+                Font = new Font("Segoe UI Semibold", 8f),
+                ForeColor = Color.FromArgb(71, 85, 105),
+                BackColor = Color.FromArgb(241, 245, 249),
+                AutoSize = true,
+                Padding = new Padding(6, 3, 6, 3),
+                Margin = new Padding(0, 0, 6, 3)
+            };
+            _scheduleStatusLabel = new Label
+            {
+                Text = "Schedule: All day",
+                Font = new Font("Segoe UI Semibold", 8f),
+                ForeColor = Color.FromArgb(71, 85, 105),
+                BackColor = Color.FromArgb(241, 245, 249),
+                AutoSize = true,
+                Padding = new Padding(6, 3, 6, 3),
+                Margin = new Padding(0, 0, 6, 3)
+            };
+            _statusDetailLabel = new Label
+            {
+                Text = "",
+                Font = new Font("Segoe UI", 8f),
+                ForeColor = Color.FromArgb(2, 132, 199),
+                AutoSize = true,
+                Margin = new Padding(0, 4, 0, 0),
+                Visible = false
+            };
+            badgesFlow.Controls.Add(_methodBadgeLabel);
+            badgesFlow.Controls.Add(_scheduleStatusLabel);
+            badgesFlow.Controls.Add(_statusDetailLabel);
+            leftFlow.Controls.Add(badgesFlow);
+            content.Controls.Add(leftFlow, 0, 0);
+
+            // Right: Clean Session Metrics
+            var statsBox = new Panel
+            {
+                AutoSize = true,
+                Dock = DockStyle.Right,
+                Padding = new Padding(10, 2, 4, 2),
+                Margin = new Padding(0)
+            };
+            var statsFlow = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoSize = true,
+                Dock = DockStyle.Fill
+            };
+            var uptimeRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0, 0, 0, 2) };
+            uptimeRow.Controls.Add(MakeStatCaption("Session:"));
             _sessionUptimeLabel = MakeStatValue("0s");
-            statsFlow.Controls.Add(_sessionUptimeLabel);
-            statsFlow.Controls.Add(new Label { Text = " · ", ForeColor = Color.LightGray, AutoSize = true, Margin = new Padding(2, 3, 2, 0) });
-            statsFlow.Controls.Add(MakeStatCaption("Keep-alives:"));
+            uptimeRow.Controls.Add(_sessionUptimeLabel);
+
+            var countRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0) };
+            countRow.Controls.Add(MakeStatCaption("Keep-alives:"));
             _keepAliveCountLabel = MakeStatValue("0");
-            statsFlow.Controls.Add(_keepAliveCountLabel);
-            content.Controls.Add(statsFlow, 1, 1);
+            countRow.Controls.Add(_keepAliveCountLabel);
+
+            statsFlow.Controls.Add(uptimeRow);
+            statsFlow.Controls.Add(countRow);
+            statsBox.Controls.Add(statsFlow);
+            content.Controls.Add(statsBox, 1, 0);
 
             card.Controls.Add(content);
             return card;
@@ -327,109 +360,148 @@ namespace PowerManager
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 3,
+                RowCount = 2,
                 Padding = new Padding(12, 8, 12, 8),
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink
             };
             content.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            content.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // countdown + next-at
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 16)); // progress bar
-            content.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // interval label
+            content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             _countdownLabel = new Label
             {
                 Text = "—",
-                Font = new Font(_settings.FontFamily, 20f, FontStyle.Bold),
-                ForeColor = Settings.ParseColor(_settings.ColorCountdown, Color.FromArgb(25, 118, 210)),
+                Font = new Font("Segoe UI", 16f, FontStyle.Bold),
+                ForeColor = Settings.ParseColor(_settings.ColorCountdown, Color.FromArgb(2, 132, 199)),
                 AutoSize = true,
-                Margin = new Padding(0, 0, 14, 0),
+                Margin = new Padding(0, 0, 12, 0),
                 Anchor = AnchorStyles.Left | AnchorStyles.Top
             };
             content.Controls.Add(_countdownLabel, 0, 0);
             content.SetRowSpan(_countdownLabel, 2);
 
-            _nextAtLabel = new Label
-            {
-                Text = "",
-                Font = new Font("Segoe UI", 8f),
-                ForeColor = Color.FromArgb(100, 100, 100),
-                AutoSize = true,
-                Anchor = AnchorStyles.Left | AnchorStyles.Bottom,
-                Margin = new Padding(0, 0, 0, 2)
-            };
-            content.Controls.Add(_nextAtLabel, 1, 0);
-
             _progressContainer = new Panel
             {
                 Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(218, 228, 240),
-                Margin = new Padding(0, 3, 0, 3)
+                Height = 8,
+                BackColor = Color.FromArgb(226, 232, 240), // Slate 200
+                Margin = new Padding(0, 6, 0, 4)
             };
             _progressFill = new Panel
             {
                 Location = new Point(0, 0),
-                BackColor = Settings.ParseColor(_settings.ColorProgressBar, Color.FromArgb(25, 118, 210))
+                Height = 8,
+                BackColor = Settings.ParseColor(_settings.ColorProgressBar, Color.FromArgb(2, 132, 199))
             };
             _progressContainer.Controls.Add(_progressFill);
             _progressContainer.Resize += (s, e) => RefreshProgressFill();
-            content.Controls.Add(_progressContainer, 1, 1);
+            content.Controls.Add(_progressContainer, 1, 0);
 
+            var metaFlow = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0)
+            };
+            _nextAtLabel = new Label
+            {
+                Text = "",
+                Font = new Font("Segoe UI", 8f),
+                ForeColor = Color.FromArgb(100, 116, 139),
+                AutoSize = true,
+                Margin = new Padding(0, 0, 8, 0)
+            };
             _intervalLabel = new Label
             {
                 Text = "",
                 Font = new Font("Segoe UI", 8f),
-                ForeColor = Color.FromArgb(130, 130, 130),
+                ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
-                Margin = new Padding(0, 2, 0, 0)
+                Margin = new Padding(0)
             };
-            content.Controls.Add(_intervalLabel, 0, 2);
-            content.SetColumnSpan(_intervalLabel, 2);
+            metaFlow.Controls.Add(_nextAtLabel);
+            metaFlow.Controls.Add(_intervalLabel);
+            content.Controls.Add(metaFlow, 1, 1);
 
             card.Controls.Add(content);
             return card;
         }
 
-        private Panel BuildScheduleCard()
+        private Panel BuildLogCard()
         {
             var card = MakeCard();
-
-            _scheduleAccentBar = new Panel { Width = 5, Dock = DockStyle.Left, BackColor = Color.Gray };
-            card.Controls.Add(_scheduleAccentBar);
-
-            var content = new FlowLayoutPanel
+            var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Padding = new Padding(12, 8, 8, 8),
-                BackColor = Color.Transparent
+                ColumnCount = 1,
+                RowCount = 2,
+                Padding = new Padding(10, 8, 10, 8)
             };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));  // Header & toolbar
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));  // Rich log box
 
-            _scheduleRangeLabel = new Label
+            var headerPanel = new Panel { Dock = DockStyle.Fill };
+            var titleLabel = new Label
             {
-                Text = "—",
+                Text = "📋  Activity Log",
                 Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(33, 33, 33),
+                ForeColor = Color.FromArgb(51, 65, 85),
                 AutoSize = true,
-                Margin = new Padding(0, 0, 0, 3)
+                Location = new Point(0, 4)
             };
-            content.Controls.Add(_scheduleRangeLabel);
-
-            _scheduleStatusLabel = new Label
+            var copyBtn = new Button
             {
-                Text = "",
-                Font = new Font("Segoe UI", 8.5f),
-                ForeColor = Color.FromArgb(80, 80, 80),
-                AutoSize = true,
-                Margin = new Padding(0, 0, 0, 0)
+                Text = "Copy",
+                Size = new Size(56, 22),
+                FlatStyle = FlatStyle.System,
+                Font = new Font("Segoe UI", 7.5f)
             };
-            content.Controls.Add(_scheduleStatusLabel);
+            copyBtn.Click += (s, e) =>
+            {
+                if (!string.IsNullOrEmpty(_logBox.Text))
+                {
+                    try { Clipboard.SetText(_logBox.Text); } catch { }
+                }
+            };
+            var clearBtn = new Button
+            {
+                Text = "Clear",
+                Size = new Size(56, 22),
+                FlatStyle = FlatStyle.System,
+                Font = new Font("Segoe UI", 7.5f)
+            };
+            clearBtn.Click += (s, e) => _logBox.Clear();
 
-            card.Controls.Add(content);
+            headerPanel.Controls.Add(titleLabel);
+            headerPanel.Controls.Add(copyBtn);
+            headerPanel.Controls.Add(clearBtn);
+            headerPanel.Resize += (s, e) =>
+            {
+                clearBtn.Location = new Point(headerPanel.ClientSize.Width - 58, 2);
+                copyBtn.Location = new Point(headerPanel.ClientSize.Width - 120, 2);
+            };
+
+            _logBox = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None,
+                BackColor = Color.FromArgb(24, 24, 27),    // Dark Zinc
+                ForeColor = Color.FromArgb(228, 228, 231),
+                Font = new Font("Consolas", 8.5f),
+                ScrollBars = RichTextBoxScrollBars.Vertical,
+                WordWrap = false,
+                DetectUrls = false
+            };
+
+            layout.Controls.Add(headerPanel, 0, 0);
+            layout.Controls.Add(_logBox, 0, 1);
+            card.Controls.Add(layout);
             return card;
         }
 
@@ -745,6 +817,11 @@ namespace PowerManager
             _statusTextLabel.ForeColor = stats.StatusColor;
             _methodBadgeLabel.Text = $"Mode: {stats.ActiveMethod}";
 
+            string scheduleLine = string.IsNullOrWhiteSpace(stats.ScheduleRangeLine) || stats.ScheduleRangeLine == "—"
+                ? "Schedule: All day"
+                : $"Schedule: {stats.ScheduleRangeLine} · {stats.ScheduleStatusLine}";
+            _scheduleStatusLabel.Text = scheduleLine;
+
             if (!string.IsNullOrEmpty(stats.StatusDetailLine))
             {
                 _statusDetailLabel.Text = stats.StatusDetailLine;
@@ -755,11 +832,6 @@ namespace PowerManager
             {
                 _statusDetailLabel.Visible = false;
             }
-
-            _scheduleAccentBar.BackColor = stats.ScheduleStatusColor;
-            _scheduleRangeLabel.Text = stats.ScheduleRangeLine;
-            _scheduleStatusLabel.Text = stats.ScheduleStatusLine;
-            _scheduleStatusLabel.ForeColor = stats.ScheduleStatusColor;
 
             var up = stats.SessionUptime;
             _sessionUptimeLabel.Text = up.TotalHours >= 1 ? $"{(int)up.TotalHours}h {up.Minutes}m"
@@ -795,13 +867,13 @@ namespace PowerManager
                 {
                     Color msgColor = entry.Level switch
                     {
-                        LogLevel.Success    => Settings.ParseColor(_settings.ColorLogSuccess,    Color.FromArgb(100, 220, 120)),
-                        LogLevel.Warning    => Settings.ParseColor(_settings.ColorLogWarning,    Color.FromArgb(255, 183, 77)),
-                        LogLevel.UserActive => Settings.ParseColor(_settings.ColorLogUserActive, Color.FromArgb(100, 181, 246)),
-                        LogLevel.Disabled   => Settings.ParseColor(_settings.ColorLogDisabled,   Color.FromArgb(239, 83, 80)),
-                        _                   => Settings.ParseColor(_settings.ColorLogInfo,       Color.FromArgb(180, 180, 180))
+                        LogLevel.Success    => Color.FromArgb(52, 211, 153),  // Emerald 400
+                        LogLevel.Warning    => Color.FromArgb(251, 191, 36),  // Amber 400
+                        LogLevel.UserActive => Color.FromArgb(56, 189, 248),  // Sky 400
+                        LogLevel.Disabled   => Color.FromArgb(248, 113, 113), // Red 400
+                        _                   => Color.FromArgb(203, 213, 225)  // Slate 300
                     };
-                    _logBox.SelectionColor = Color.FromArgb(100, 100, 100);
+                    _logBox.SelectionColor = Color.FromArgb(100, 116, 139);   // Slate 500
                     _logBox.AppendText(entry.Time.ToString("HH:mm:ss") + "  ");
                     _logBox.SelectionColor = msgColor;
                     _logBox.AppendText(entry.Icon + "  " + entry.Message + "\n");
@@ -817,8 +889,8 @@ namespace PowerManager
             int w = (int)(_progressContainer.Width * _lastProgressPct);
             _progressFill.Size = new Size(Math.Max(0, Math.Min(w, _progressContainer.Width)), _progressContainer.Height);
             _progressFill.BackColor = _lastProgressPct < _settings.ProgressUrgentThreshold
-                ? Settings.ParseColor(_settings.ColorProgressBarUrgent, Color.FromArgb(244, 81, 30))
-                : Settings.ParseColor(_settings.ColorProgressBar,       Color.FromArgb(25, 118, 210));
+                ? Settings.ParseColor(_settings.ColorProgressBarUrgent, Color.FromArgb(239, 68, 68))   // Red 500
+                : Settings.ParseColor(_settings.ColorProgressBar,       Color.FromArgb(2, 132, 199));  // Sky 600
         }
 
         // ════════════════════════════════════════════════════════════════════
@@ -955,14 +1027,29 @@ namespace PowerManager
         }
 
         // ════════════════════════════════════════════════════════════════════
-        // HELPERS
+        // HELPERS & FLAT CONTROLS
         // ════════════════════════════════════════════════════════════════════
 
-        private static Panel MakeCard() => new Panel
+        private sealed class FlatCardPanel : Panel
         {
-            Dock = DockStyle.Fill,
-            BackColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle
+            public FlatCardPanel()
+            {
+                DoubleBuffered = true;
+                BackColor = Color.White;
+                Padding = new Padding(0);
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                using var pen = new Pen(Color.FromArgb(226, 232, 240), 1); // Slate 200 soft border
+                e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+            }
+        }
+
+        private static Panel MakeCard() => new FlatCardPanel
+        {
+            Dock = DockStyle.Fill
         };
 
         // Table for settings tabs — AutoSize rows so content is never clipped

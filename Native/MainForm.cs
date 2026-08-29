@@ -81,8 +81,15 @@ namespace PowerManager
             _trayMenu = CreateTrayMenu();
 
             Icon trayIconImage;
-            try { trayIconImage = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; }
+            try
+            {
+                Icon? appIcon = null;
+                string localIco = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+                if (System.IO.File.Exists(localIco)) appIcon = new Icon(localIco);
+                trayIconImage = appIcon ?? Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
+            }
             catch { trayIconImage = SystemIcons.Application; }
+            this.Icon = trayIconImage;
 
             _trayIcon = new NotifyIcon
             {
