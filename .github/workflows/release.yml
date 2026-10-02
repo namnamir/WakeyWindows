@@ -1,6 +1,6 @@
 # Build the Native (C#) app and attach the exe to a GitHub Release.
 # Trigger: push a tag v* (usually from "Prepare Release" workflow — no manual git needed).
-# Version file and Native/WakeyNative.csproj are updated by Prepare Release before tagging.
+# Version file is updated by Prepare Release before tagging; WakeyNative.csproj reads it at build time.
 
 name: Release Native Build
 

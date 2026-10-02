@@ -6,7 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    
+
     <!-- ============================================================== -->
     <!-- APPLICATION METADATA & IDENTITY                                -->
     <!-- ============================================================== -->
@@ -16,19 +16,21 @@
     <Description>WakeyWindows - Lightweight System Keep-Alive Manager</Description>
     <Company>Ali Nikouei</Company>
     <Copyright>Copyright © 2026 Ali Nikouei</Copyright>
-    <Version>2.3.2</Version>
+    <VersionFile>$(MSBuildThisFileDirectory)..\Version</VersionFile>
+    <Version Condition="Exists('$(VersionFile)')">$([System.IO.File]::ReadAllText('$(VersionFile)').Trim())</Version>
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
     <AssemblyTitle>WakeyWindows</AssemblyTitle>
     <NeutralLanguage>en</NeutralLanguage>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
-    
+
     <!-- Set to true for single-file deployment -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    
+
     <!-- Trim unused code for smaller size -->
     <PublishTrimmed>false</PublishTrimmed>
-    
+
     <!-- Application icon -->
     <ApplicationIcon>app.ico</ApplicationIcon>
 
