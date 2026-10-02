@@ -11,7 +11,8 @@ namespace PowerManager
         [STAThread]
         static void Main(string[] args)
         {
-            // Ensure only one instance runs
+            // Ensure only one instance runs (per user session)
+            const string mutexName = @"Local\WakeyNative_SingleInstance";
             bool createdNew = false;
             try
             {
